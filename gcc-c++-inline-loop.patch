@@ -1,0 +1,251 @@
+2001-02-22  Jakub Jelinek  <jakub@redhat.com>
+
+	* cp-tree.h (struct lang_decl_inlined_fns): New.
+	(struct lang_decls): Add inlined_fns.
+	(DECL_INLINED_FNS): New macro.
+	* optimize.c (struct inline_data): Add inlined_fns.
+	(declare_return_variable): Use VARRAY_ACTIVE_SIZE macro.
+	(inlinable_function_p): Likewise, fix typo in comment,
+	function is not inlinable if it already inlined function currently
+	being optimized.
+	(expand_call_inline): Add fn to inlined_fns if neccessary.
+	(optimize_function): Initialize inlined_fns.
+	Save inlined_fns into DECL_INLINED_FNS after expanding inlines.
+	* decl.c (mark_inlined_fns): New function.
+	(lang_mark_tree): Call it.
+
+	* g++.old-deja/g++.other/inline20.C: New test.
+
+--- gcc/cp/optimize.c.jj	Fri Feb  9 01:35:15 2001
++++ gcc/cp/optimize.c	Thu Feb 22 14:20:15 2001
+@@ -28,6 +28,7 @@ Software Foundation, 59 Temple Place - S
+ #include "input.h"
+ #include "integrate.h"
+ #include "varray.h"
++#include "ggc.h"
+ 
+ /* To Do:
+ 
+@@ -62,6 +63,8 @@ typedef struct inline_data
+   int in_target_cleanup_p;
+   /* A stack of the TARGET_EXPRs that we are currently processing.  */
+   varray_type target_exprs;
++  /* A list of the functions current function has inlined.  */
++  varray_type inlined_fns;
+ } inline_data;
+ 
+ /* Prototypes.  */
+@@ -516,7 +519,7 @@ declare_return_variable (id, use_stmt)
+      references to the RESULT into references to the target.  */
+   if (aggregate_return_p)
+     {
+-      my_friendly_assert (id->target_exprs->elements_used != 0,
++      my_friendly_assert (VARRAY_ACTIVE_SIZE (id->target_exprs) != 0,
+ 			  20000430);
+       var = TREE_OPERAND (VARRAY_TOP_TREE (id->target_exprs), 0);
+       my_friendly_assert 
+@@ -604,14 +607,23 @@ inlinable_function_p (fn, id)
+     inlinable = 0;
+ 
+   /* Don't do recursive inlining, either.  We don't record this in
+-     DECL_UNLINABLE; we may be able to inline this function later.  */
++     DECL_UNINLINABLE; we may be able to inline this function later.  */
+   if (inlinable)
+     {
+       size_t i;
+ 
+-      for (i = 0; i < id->fns->elements_used; ++i)
++      for (i = 0; i < VARRAY_ACTIVE_SIZE (id->fns); ++i)
+ 	if (VARRAY_TREE (id->fns, i) == fn)
+-	  inlinable = 0;
++	  return 0;
++
++      if (inlinable && DECL_LANG_SPECIFIC (fn) && DECL_INLINED_FNS (fn))
++	{
++	  struct lang_decl_inlined_fns *ifn = DECL_INLINED_FNS (fn);
++
++	  for (i = 0; i < ifn->num_fns; ++i)
++	    if (ifn->fns [i] == VARRAY_TREE (id->fns, 0))
++	      return 0;
++	}
+     }
+ 
+   /* Return the result.  */
+@@ -720,6 +732,19 @@ expand_call_inline (tp, walk_subtrees, d
+      recursing into it.  */
+   VARRAY_PUSH_TREE (id->fns, fn);
+ 
++  /* Record the function we are about to inline if optimize_function
++     has not been called on it yet and we don't have it in the list.  */
++  if (DECL_LANG_SPECIFIC (fn) && !DECL_INLINED_FNS (fn))
++    {
++      int i;
++
++      for (i = VARRAY_ACTIVE_SIZE (id->inlined_fns) - 1; i >= 0; i--)
++	if (VARRAY_TREE (id->inlined_fns, i) == fn)
++	  break;
++      if (i < 0)
++	VARRAY_PUSH_TREE (id->inlined_fns, fn);
++    }
++
+   /* Return statements in the function body will be replaced by jumps
+      to the RET_LABEL.  */
+   id->ret_label = build_decl (LABEL_DECL, NULL_TREE, NULL_TREE);
+@@ -866,6 +891,9 @@ optimize_function (fn)
+       /* Create the stack of TARGET_EXPRs.  */
+       VARRAY_TREE_INIT (id.target_exprs, 32, "target_exprs");
+ 
++      /* Create the list of functions this call will inline.  */
++      VARRAY_TREE_INIT (id.inlined_fns, 32, "inlined_fns");
++
+       /* Replace all calls to inline functions with the bodies of those
+ 	 functions.  */
+       expand_calls_inline (&DECL_SAVED_TREE (fn), &id);
+@@ -873,6 +901,19 @@ optimize_function (fn)
+       /* Clean up.  */
+       VARRAY_FREE (id.fns);
+       VARRAY_FREE (id.target_exprs);
++      if (DECL_LANG_SPECIFIC (fn))
++	{
++	  struct lang_decl_inlined_fns *ifn;
++
++	  ifn = ggc_alloc (sizeof (struct lang_decl_inlined_fns)
++			   + (VARRAY_ACTIVE_SIZE (id.inlined_fns) - 1)
++			     * sizeof (tree));
++	  ifn->num_fns = VARRAY_ACTIVE_SIZE (id.inlined_fns);
++	  memcpy (&ifn->fns[0], &VARRAY_TREE (id.inlined_fns, 0),
++		  ifn->num_fns * sizeof (tree));
++	  DECL_INLINED_FNS (fn) = ifn;
++	}
++      VARRAY_FREE (id.inlined_fns);
+     }
+ 
+   /* Undo the call to ggc_push_context above.  */
+--- gcc/cp/cp-tree.h.jj	Fri Feb  9 01:35:15 2001
++++ gcc/cp/cp-tree.h	Thu Feb 22 14:20:16 2001
+@@ -1898,6 +1898,12 @@ struct lang_decl_flags
+   } u2;
+ };
+ 
++struct lang_decl_inlined_fns
++{
++  size_t num_fns;
++  tree fns[1];
++};
++
+ struct lang_decl
+ {
+   struct lang_decl_flags decl_flags;
+@@ -1910,6 +1916,9 @@ struct lang_decl
+   /* In a FUNCTION_DECL, this is DECL_CLONED_FUNCTION.  */
+   tree cloned_function;
+ 
++  /* In a FUNCTION_DECL, this is a list of trees inlined into its body.  */
++  struct lang_decl_inlined_fns *inlined_fns;
++
+   union
+   {
+     tree sorted_fields;
+@@ -2021,6 +2030,10 @@ struct lang_decl
+    cloned.  */
+ #define DECL_CLONED_FUNCTION(NODE) \
+   (DECL_LANG_SPECIFIC (NODE)->cloned_function)
++
++/* List of FUNCION_DECLs inlined into this function's body.  */
++#define DECL_INLINED_FNS(NODE) \
++  (DECL_LANG_SPECIFIC (NODE)->inlined_fns)
+ 
+ /* In a maybe-in-charge constructor or destructor, this is the VTT
+    parameter.  It's not actually on the DECL_ARGUMENTS list.  */
+--- gcc/cp/decl.c.jj	Fri Feb  9 01:35:15 2001
++++ gcc/cp/decl.c	Thu Feb 22 14:21:06 2001
+@@ -14908,6 +14908,19 @@ pop_cp_function_context (f)
+   f->language = 0;
+ }
+ 
++/* Mark I for GC.  */
++
++static void
++mark_inlined_fns (i)
++     struct lang_decl_inlined_fns *i;
++{
++  int n;
++
++  for (n = i->num_fns - 1; n >= 0; n--)
++    ggc_mark_tree (i->fns [n]);
++  ggc_set_mark (i);
++}
++
+ /* Mark P for GC.  */
+ 
+ static void
+@@ -15004,6 +15017,8 @@ lang_mark_tree (t)
+ 	      ggc_mark_tree (ld->befriending_classes);
+ 	      ggc_mark_tree (ld->saved_tree);
+ 	      ggc_mark_tree (ld->cloned_function);
++	      if (ld->inlined_fns)
++		mark_inlined_fns (ld->inlined_fns);
+ 	      if (!DECL_OVERLOADED_OPERATOR_P (t))
+ 		ggc_mark_tree (ld->u2.vtt_parm);
+ 	      if (TREE_CODE (t) == TYPE_DECL)
+--- gcc/testsuite/g++.old-deja/g++.other/inline20.C.jj	Thu Feb 22 14:20:17 2001
++++ gcc/testsuite/g++.old-deja/g++.other/inline20.C	Thu Feb 22 14:20:17 2001
+@@ -0,0 +1,58 @@
++// Build don't link:
++
++struct A {
++  int a, b, c, d;
++};
++
++inline void foo (int, A &);
++
++struct D {
++};
++
++struct E: public D {
++  void f (A &y)
++  {
++    foo (1, y);
++  }
++};
++
++struct F: public D {
++  void f (A &y)
++  {
++    foo (2, y);
++  }
++};
++
++E *d;
++F *e;
++
++inline int baz (int y)
++{
++  A a;
++  if (y) {
++    d->f (a);
++  } else {
++    e->f (a);
++  }
++  return 0;
++}
++
++inline void foo (int y, A &z)
++{
++  z.a = baz (y);
++  z.b = baz (y);
++  z.c = baz (y);
++  z.d = baz (y);
++}
++
++struct G {
++  E a;
++  F b;
++  void bar (A &);
++};
++
++void G::bar(A &y)
++{
++  a.f(y);
++  b.f(y);
++}

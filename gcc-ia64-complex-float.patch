@@ -1,0 +1,67 @@
+2001-06-05  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/ia64.c (ia64_function_arg): Use [SDT]Fmode as gr_mode
+	for complex floats passed to unprototyped functions.
+
+	* gcc.c-torture/execute/20010605-1.c: New test.
+
+--- gcc/config/ia64/ia64.c.jj	Wed May 16 23:32:50 2001
++++ gcc/config/ia64/ia64.c	Tue Jun  5 17:28:21 2001
+@@ -2853,13 +2853,17 @@ ia64_function_arg (cum, mode, type, name
+ 	     adjusted/little endian.  */
+ 	  else if (byte_size - offset == 4)
+ 	    gr_mode = SImode;
++	  /* Complex floats need to have float mode.  */
++	  if (GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT)
++	    gr_mode = hfa_mode;
+ 
+ 	  loc[i] = gen_rtx_EXPR_LIST (VOIDmode,
+ 				      gen_rtx_REG (gr_mode, (basereg
+ 							     + int_regs)),
+ 				      GEN_INT (offset));
+ 	  offset += GET_MODE_SIZE (gr_mode);
+-	  int_regs++;
++	  int_regs += GET_MODE_SIZE (gr_mode) <= UNITS_PER_WORD
++		      ? 1 : GET_MODE_SIZE (gr_mode) / UNITS_PER_WORD;
+ 	}
+ 
+       /* If we ended up using just one location, just return that one loc.  */
+--- gcc/testsuite/gcc.c-torture/execute/20010605-1.c.jj	Fri Feb 16 21:16:31 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010605-1.c	Tue Jun  5 18:14:52 2001
+@@ -0,0 +1,36 @@
++void foo (), bar (), baz ();
++int main ()
++{
++  __complex__ double x;
++  __complex__ float y;
++  __complex__ long double z;
++  __real__ x = 1.0;
++  __imag__ x = 2.0;
++  foo (x);
++  __real__ y = 3.0f;
++  __imag__ y = 4.0f;
++  bar (y);
++  __real__ z = 5.0L;
++  __imag__ z = 6.0L;
++  baz (z);
++  exit (0);
++}
++
++void foo (__complex__ double x)
++{
++  if (__real__ x != 1.0 || __imag__ x != 2.0)
++    abort ();
++}
++
++void bar (__complex__ float x)
++{
++  if (__real__ x != 3.0f || __imag__ x != 4.0f)
++    abort ();
++}
++
++void baz (__complex__ long double x)
++{
++  if (__real__ x != 5.0L || __imag__ x != 6.0L)
++    abort ();
++}
++

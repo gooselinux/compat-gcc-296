@@ -1,0 +1,1243 @@
+2001-06-22  Jakub Jelinek  <jakub@redhat.com>
+
+	* configure.in: Check whether assembler supports section merging.
+	* config.in: Rebuilt.
+	* configure: Rebuilt.
+	* varasm.c (variable_section, output_constant_pool): Pass alignment
+	to SELECT_SECTION and SELECT_RTX_SECTION.
+	* toplev.c (flag_merge_constants): New.
+	(f_options): Add -fmerge-constants and -fmerge-all-constants
+	options.
+	(toplev_main): Default to -fno-merge-constants if not optimizing.
+	* flags.h (flag_merge_constants): Add extern.
+	* invoke.texi (-fmerge-constants, -fmerge-all-constants): Document.
+	* tm.texi (SELECT_SECTION, SELECT_RTX_SECTION): Document added third
+	argument.
+	* config/elfos.h (EXTRA_SECTIONS): Add new sections.
+	(EXTRA_SECTION_FUNCTIONS): Add CONST_STR_SECTION_FUNCTION and
+	CONST_VAR_SECTION_FUNCTION.
+	(USE_GAS_SUBSECTION_ORDERING, CONST_STR_SECTION_FUNCTION,
+	CONST_VAR_SECTION_FUNCTION): Define.
+	(SELECT_RTX_SECTION, SELECT_SECTION): Add third macro argument.
+	Put constant into special SHF_MERGE sections if the linker should
+	attempt to merge duplicates.
+	* config/ia64/sysv4.h (EXTRA_SECTIONS): Add new sections.
+	(EXTRA_SECTION_FUNCTIONS): Add CONST_STR_SECTION_FUNCTION and
+	CONST_VAR_SECTION_FUNCTION.
+	(SELECT_RTX_SECTION, SELECT_SECTION): Add third macro argument.
+	Put constant into special SHF_MERGE sections if the linker should
+	attempt to merge duplicates.
+	* config/alpha/elf.h: Likewise.
+	* config/nextstep.h: Add third argument to SELECT_RTX_SECTION and
+	SELECT_SECTION.
+	* config/svr3.h: Likewise.
+	* config/darwin.h: Likewise.
+	* config/arm/aof.h: Likewise.
+	* config/arm/linux-elf.h: Likewise.
+	* config/avr/avr.h: Likewise.
+	* config/c4x/c4x.h: Likewise.
+	* config/d30v/d30v.h: Likewise.
+	* config/i386/dgux.h: Likewise.
+	* config/i386/osfrose.h: Likewise.
+	* config/i386/sco5.h: Likewise.
+	* config/i386/svr3gas.h: Likewise.
+	* config/m32r/m32r.h: Likewise.
+	* config/m68k/m68k.h: Likewise.
+	* config/m88k/dgux.h: Likewise.
+	* config/m88k/m88k.h: Likewise.
+	* config/mcore/mcore-pe.h: Likewise.
+	* config/mips/mips.h: Likewise.
+	* config/pa/pa.h: Likewise.
+	* config/romp/romp.h: Likewise.
+	* config/rs6000/aix.h: Likewise.
+	* config/rs6000/sysv4.h: Likewise.
+	* config/sparc/sparc.h: Likewise.
+	* config/sparc/sysv4.h: Likewise.
+	* config/v850/v850.h: Likewise.
+	* config/vax/vms.h: Likewise.
+
+	* com.c (ffe_init_options): Default to -fmerge-all-constants
+	if optimizing.
+
+--- gcc/f/com.c.jj	Wed Jun  6 19:53:45 2001
++++ gcc/f/com.c	Fri Jun  8 20:30:39 2001
+@@ -14905,6 +14905,7 @@ lang_init_options ()
+   flag_move_all_movables = 1;
+   flag_reduce_all_givs = 1;
+   flag_argument_noalias = 2;
++  flag_merge_constants = 2;
+   flag_errno_math = 0;
+   flag_complex_divide_method = 1;
+ }
+--- gcc/config/alpha/elf.h.jj	Wed Jun  6 19:53:26 2001
++++ gcc/config/alpha/elf.h	Fri Jun  8 20:33:11 2001
+@@ -249,7 +249,15 @@ do {									\
+    includes this file.  */
+ 
+ #undef EXTRA_SECTIONS
++#ifdef HAVE_GAS_SHF_MERGE
++#define EXTRA_SECTIONS in_const, in_ctors, in_dtors,			\
++  in_sbss, in_sdata, in_const_cst1, in_const_cst2, in_const_cst4,	\
++  in_const_cst8, in_const_cst16,					\
++  in_const_str1 = 256, in_const_str2 = 256 + 32,			\
++  in_const_str4 = 256 + 2*32, in_const_str8 = 256 + 3*32
++#else
+ #define EXTRA_SECTIONS in_const, in_ctors, in_dtors, in_sbss, in_sdata
++#endif
+ 
+ /* A default list of extra section function definitions.  For targets
+    that use additional sections (e.g. .tdesc) you should override this
+@@ -258,6 +266,8 @@ do {									\
+ #undef EXTRA_SECTION_FUNCTIONS
+ #define EXTRA_SECTION_FUNCTIONS						\
+   CONST_SECTION_FUNCTION						\
++  CONST_STR_SECTION_FUNCTION						\
++  CONST_VAR_SECTION_FUNCTION						\
+   SECTION_FUNCTION_TEMPLATE(ctors_section, in_ctors, CTORS_SECTION_ASM_OP) \
+   SECTION_FUNCTION_TEMPLATE(dtors_section, in_dtors, DTORS_SECTION_ASM_OP) \
+   SECTION_FUNCTION_TEMPLATE(sbss_section, in_sbss, SBSS_SECTION_ASM_OP)	\
+@@ -271,6 +281,140 @@ extern void sdata_section		PARAMS ((void
+ #undef READONLY_DATA_SECTION
+ #define READONLY_DATA_SECTION() const_section ()
+ 
++#ifdef HAVE_GAS_SUBSECTION_ORDERING
++#define USE_GAS_SUBSECTION_ORDERING 1
++#else
++#define USE_GAS_SUBSECTION_ORDERING 0
++#endif
++
++#ifdef HAVE_GAS_SHF_MERGE
++#define CONST_STR_SECTION_FUNCTION					\
++extern void const_str_section PARAMS ((tree, unsigned HOST_WIDE_INT));	\
++									\
++void									\
++const_str_section (decl, align)						\
++     tree decl;								\
++     unsigned HOST_WIDE_INT align;					\
++{									\
++  enum in_section in;							\
++  enum machine_mode mode;						\
++  const char *str;							\
++  int i, j, len, unit;							\
++									\
++  if (flag_merge_constants						\
++      && USE_CONST_SECTION						\
++      && TREE_CODE (decl) == STRING_CST					\
++      && TREE_CODE (TREE_TYPE (decl)) == ARRAY_TYPE			\
++      && align <= 256)							\
++    {									\
++      mode = TYPE_MODE (TREE_TYPE (TREE_TYPE (decl)));			\
++      switch (GET_MODE_BITSIZE (mode))					\
++	{								\
++	case 8: in = in_const_str1; break;				\
++	case 16: in = in_const_str2; break;				\
++	case 32: in = in_const_str4; break;				\
++	case 64: in = in_const_str8; break;				\
++	default: in = no_section; break;				\
++	}								\
++      if (align < GET_MODE_BITSIZE (mode))				\
++	align = GET_MODE_BITSIZE (mode);				\
++      if (in != no_section)						\
++	{								\
++	  str = TREE_STRING_POINTER (decl);				\
++	  len = TREE_STRING_LENGTH (decl);				\
++	  unit = GET_MODE_SIZE (mode);					\
++	  /* Check for embedded NUL characters.  */			\
++	  for (i = 0; i < len; i += unit)				\
++	    {								\
++	      for (j = 0; j < unit; j++)				\
++		if (str [i + j] != '\0')				\
++		  break;						\
++	      if (j == unit)						\
++		break;							\
++	    }								\
++	  if (i == len - unit)						\
++	    {								\
++	      unit = GET_MODE_BITSIZE (mode) / 8;			\
++	      if (!i && GET_MODE_BITSIZE (mode) < align)		\
++		{							\
++		  /* A "" string with requested alignment greater than	\
++		     character size might cause a problem:		\
++		     if some other string required even bigger		\
++		     alignment than "", then linker might think the	\
++		     "" is just part of padding after some other string	\
++		     and not put it into the hash table initially.	\
++		     But this means "" could have smaller alignment	\
++		     than requested.  */				\
++		  if (USE_GAS_SUBSECTION_ORDERING)			\
++		    {							\
++		      fprintf (asm_out_file,				\
++"\t.section\t.rodata.str%d.%d,\"aMS\",@progbits,%d\n\t.subsection\t-1\n",\
++			       unit, (int) (align / 8), unit);		\
++		      in_section = in;					\
++		    }							\
++		  else							\
++		    const_section ();					\
++		  return;						\
++		}							\
++	      in = (enum in_section) ((int) in + align / 8);		\
++	      if (in_section != in)					\
++		{							\
++		  fprintf (asm_out_file,				\
++"\t.section\t.rodata.str%d.%d,\"aMS\",@progbits,%d\n",			\
++			   unit, (int) (align / 8), unit);		\
++		  in_section = in;					\
++		}							\
++	      return;							\
++	    }								\
++	}								\
++    }									\
++  const_section ();							\
++}
++
++#define CONST_VAR_SECTION_FUNCTION					\
++extern void const_var_section						\
++  PARAMS ((enum machine_mode, unsigned HOST_WIDE_INT));			\
++									\
++void									\
++const_var_section (mode, align)						\
++     enum machine_mode mode;						\
++     unsigned HOST_WIDE_INT align;					\
++{									\
++  if (flag_merge_constants && mode != VOIDmode && mode != BLKmode	\
++      && GET_MODE_BITSIZE (mode) <= align)				\
++    {									\
++      enum in_section in;						\
++									\
++      switch (align)							\
++	{								\
++	case 8: in = in_const_cst1; break;				\
++	case 16: in = in_const_cst2; break;				\
++	case 32: in = in_const_cst4; break;				\
++	case 64: in = in_const_cst8; break;				\
++	case 128: in = in_const_cst16; break;				\
++	default: in = no_section; break;				\
++	}								\
++      if (in_section != no_section)					\
++	{								\
++	  if (in_section != in)						\
++	    {								\
++	      fprintf (asm_out_file,					\
++"\t.section\t.rodata.cst%d,\"aM\",@progbits,%d\n",			\
++		       (int) (align / 8), (int) (align / 8));		\
++	      in_section = in;						\
++	    }								\
++	  return;							\
++	}								\
++    }									\
++  const_section ();							\
++}
++#else
++#define CONST_STR_SECTION_FUNCTION
++#define CONST_VAR_SECTION_FUNCTION
++#define const_str_section(DECL,ALIGN) const_section ()
++#define const_var_section(MODE,ALIGN) const_section ()
++#endif
++
+ #define CONST_SECTION_FUNCTION					\
+ void								\
+ const_section ()						\
+@@ -331,12 +475,12 @@ void FN ()					\
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ 
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+       if (! flag_writable_strings)					\
+-	const_section ();						\
++	const_str_section ((DECL), (ALIGN));				\
+       else								\
+ 	data_section ();						\
+     }									\
+@@ -354,8 +498,15 @@ void FN ()					\
+ 	  else								\
+ 	    data_section ();						\
+ 	}								\
+-      else								\
++      else if (flag_merge_constants < 2)				\
++	/* C and C++ don't allow different variables to share   	\
++	   the same location.  -fmerge-all-constants allows     	\
++	   even that (at the expense of not conforming).  */     	\
+ 	const_section ();						\
++      else if (TREE_CODE (DECL_INITIAL (DECL)) == STRING_CST)   	\
++	const_str_section (DECL_INITIAL (DECL), (ALIGN));       	\
++      else								\
++	const_var_section (DECL_MODE (DECL), (ALIGN));			\
+     }									\
+   else if (TREE_CODE (DECL) == CONSTRUCTOR)				\
+     {									\
+@@ -383,7 +534,8 @@ void FN ()					\
+    go into the const section.  */
+ 
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE,RTX) const_section()
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) \
++  const_var_section ((MODE), (ALIGN))
+ 
+ /* Define the strings used for the special svr4 .type and .size directives.
+    These strings generally do not vary from one system running svr4 to
+--- gcc/config/arm/aof.h.jj	Mon Mar 13 18:02:18 2000
++++ gcc/config/arm/aof.h	Fri Jun  8 20:30:39 2001
+@@ -55,7 +55,7 @@ Boston, MA 02111-1307, USA.  */
+ char *aof_text_section ();
+ #define TEXT_SECTION_ASM_OP aof_text_section ()
+ 
+-#define SELECT_RTX_SECTION(MODE,RTX) text_section ();
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) text_section ();
+ 
+ char *aof_data_section ();
+ #define DATA_SECTION_ASM_OP aof_data_section ()
+--- gcc/config/arm/linux-elf.h.jj	Sat Apr  8 21:14:56 2000
++++ gcc/config/arm/linux-elf.h	Fri Jun  8 20:30:39 2001
+@@ -190,7 +190,7 @@ const_section ()							\
+    section for output of DECL.  DECL is either a `VAR_DECL' node
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+@@ -257,7 +257,7 @@ const_section ()							\
+    of constant in RTL.  The argument MODE is redundant except
+    in the case of a `const_int' rtx.  Currently, these always
+    go into the const section.  */
+-#define SELECT_RTX_SECTION(MODE,RTX) const_section ()
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) const_section ()
+ 
+ /* On svr4, we *do* have support for the .init and .fini sections, and we
+    can put stuff in there to be executed before and after `main'.  We let
+--- gcc/config/c4x/c4x.h.jj	Mon Jul 31 20:02:14 2000
++++ gcc/config/c4x/c4x.h	Fri Jun  8 20:30:39 2001
+@@ -2066,7 +2066,7 @@ dtors_section ()							\
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ 
+-#define SELECT_SECTION(DECL, RELOC)					\
++#define SELECT_SECTION(DECL, RELOC, ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+@@ -2111,7 +2111,7 @@ dtors_section ()							\
+    in the case of a `const_int' rtx.  Currently, these always
+    go into the const section.  */
+ 
+-#define SELECT_RTX_SECTION(MODE, RTX) const_section()
++#define SELECT_RTX_SECTION(MODE, RTX, ALIGN) const_section()
+ 
+ 
+ /* Overall Framework of an Assembler File.  */
+--- gcc/config/i386/dgux.h.jj	Sun Jul  2 10:37:12 2000
++++ gcc/config/i386/dgux.h	Fri Jun  8 20:30:39 2001
+@@ -232,7 +232,7 @@ Boston, MA 02111-1307, USA.  */
+ 
+ /* Must use data section for relocatable constants when pic.  */
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE,RTX)            \
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN)      \
+ {                                               \
+   if (flag_pic && symbolic_operand (RTX, VOIDmode)) \
+     data_section ();                            \
+--- gcc/config/i386/osfrose.h.jj	Sun Jul  2 10:37:13 2000
++++ gcc/config/i386/osfrose.h	Fri Jun  8 20:30:39 2001
+@@ -571,7 +571,7 @@ while (0)
+    and select that section.  */
+ 
+ #undef	SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE, RTX)					\
++#define SELECT_RTX_SECTION(MODE, RTX, ALIGN)				\
+ do									\
+   {									\
+     if (MODE == Pmode && HALF_PIC_P () && HALF_PIC_ADDRESS_P (RTX))	\
+@@ -582,7 +582,7 @@ do									\
+ while (0)
+ 
+ #undef	SELECT_SECTION
+-#define SELECT_SECTION(DECL, RELOC)					\
++#define SELECT_SECTION(DECL, RELOC, ALIGN)				\
+ {									\
+   if (RELOC && HALF_PIC_P ())						\
+     data_section ();							\
+--- gcc/config/i386/sco5.h.jj	Sun Jul  2 10:37:13 2000
++++ gcc/config/i386/sco5.h	Fri Jun  8 20:30:39 2001
+@@ -382,7 +382,7 @@ do {									\
+ 
+ /* Must use data section for relocatable constants when pic.  */
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE,RTX)					\
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN)				\
+ {									\
+   if (TARGET_ELF) {							\
+     if (flag_pic && symbolic_operand (RTX, VOIDmode))			\
+@@ -671,7 +671,7 @@ dtors_section ()							\
+    : 0))
+ 
+ #undef SELECT_SECTION
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TARGET_ELF && flag_pic && RELOC)					\
+      data_section ();							\
+--- gcc/config/i386/svr3gas.h.jj	Sun Oct 24 21:38:53 1999
++++ gcc/config/i386/svr3gas.h	Fri Jun  8 20:30:39 2001
+@@ -231,7 +231,7 @@ dtors_section ()							\
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ 
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+@@ -261,7 +261,7 @@ dtors_section ()							\
+    in the case of a `const_int' rtx.  Currently, these always
+    go into the const section.  */
+ 
+-#define SELECT_RTX_SECTION(MODE,RTX) const_section()
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) const_section()
+ 
+ /* This is copied from i386/sysv3.h.  */
+ 
+--- gcc/config/m32r/m32r.h.jj	Sun Jul  2 10:37:14 2000
++++ gcc/config/m32r/m32r.h	Fri Jun  8 20:30:39 2001
+@@ -1628,7 +1628,8 @@ sbss_section ()								\
+    or a constant of some sort.  RELOC indicates whether the initial value
+    of EXP requires link-time relocations.  */
+ #undef  SELECT_SECTION
+-#define SELECT_SECTION(EXP, RELOC) m32r_select_section ((EXP), (RELOC))
++#define SELECT_SECTION(EXP, RELOC, ALIGN) \
++  m32r_select_section ((EXP), (RELOC))
+ 
+ /* A C statement or statements to switch to the appropriate section for
+    output of RTX in mode MODE.  You can assume that RTX
+--- gcc/config/m68k/m68k.h.jj	Mon May 22 21:08:29 2000
++++ gcc/config/m68k/m68k.h	Fri Jun  8 20:30:39 2001
+@@ -322,7 +322,7 @@ extern int target_flags;
+ /* This is how to align an instruction for optimal branching. */
+ #define LABEL_ALIGN_AFTER_BARRIER(LABEL) (m68k_align_jumps)
+ 
+-#define SELECT_RTX_SECTION(MODE, X)					\
++#define SELECT_RTX_SECTION(MODE, X, ALIGN)				\
+ {									\
+   if (!flag_pic)							\
+     readonly_data_section();						\
+--- gcc/config/m88k/dgux.h.jj	Thu Aug 26 00:40:16 1999
++++ gcc/config/m88k/dgux.h	Fri Jun  8 20:30:39 2001
+@@ -293,7 +293,7 @@ func_ptr __DTOR_END__[1] = { (func_ptr) 
+ 
+ /* Must use data section for relocatable constants when pic.  */
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE,RTX)            \
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN)      \
+ {                                               \
+   if (flag_pic && symbolic_operand (RTX))       \
+     data_section ();                            \
+--- gcc/config/m88k/m88k.h.jj	Mon May 22 21:08:29 2000
++++ gcc/config/m88k/m88k.h	Fri Jun  8 20:30:39 2001
+@@ -2528,7 +2528,7 @@ sdata_section ()							\
+ 
+    For strings, the section is selected before the segment info is encoded.  */
+ #undef	SELECT_SECTION
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+--- gcc/config/mips/mips.h.jj	Sun Jul  2 10:37:14 2000
++++ gcc/config/mips/mips.h	Fri Jun  8 20:33:56 2001
+@@ -4492,9 +4492,11 @@ rdata_section ()							\
+ /* Given a decl node or constant node, choose the section to output it in
+    and select that section.  */
+ 
+-#define SELECT_RTX_SECTION(MODE,RTX)	mips_select_rtx_section (MODE, RTX)
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) \
++  mips_select_rtx_section (MODE, RTX)
+ 
+-#define SELECT_SECTION(DECL, RELOC)	mips_select_section (DECL, RELOC)
++#define SELECT_SECTION(DECL, RELOC,ALIGN) \
++  mips_select_section (DECL, RELOC)
+ 
+ 
+ /* Store in OUTPUT a string (made with alloca) containing
+--- gcc/config/pa/pa.h.jj	Thu Jun 22 13:47:18 2000
++++ gcc/config/pa/pa.h	Fri Jun  8 20:30:39 2001
+@@ -1419,7 +1419,7 @@ do { 									\
+    library.  Since we can't know at compile time if a symbol will be
+    satisfied by a shared library or main program we put any symbolic
+    constant into the normal data section.  */
+-#define SELECT_RTX_SECTION(MODE,RTX)	\
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN)	\
+   if (symbolic_operand (RTX, MODE))	\
+     data_section ();			\
+   else					\
+@@ -1429,7 +1429,7 @@ do { 									\
+    in the read-only data section to a symbol defined in a shared
+    library.  Therefore, expressions that might require a reloc can
+    not be placed in the read-only data section.  */
+-#define SELECT_SECTION(EXP,RELOC) \
++#define SELECT_SECTION(EXP,RELOC,ALIGN) \
+   if (TREE_CODE (EXP) == VAR_DECL \
+       && TREE_READONLY (EXP) \
+       && !TREE_THIS_VOLATILE (EXP) \
+--- gcc/config/romp/romp.h.jj	Thu Mar 30 17:22:32 2000
++++ gcc/config/romp/romp.h	Fri Jun  8 20:30:39 2001
+@@ -716,7 +716,7 @@ struct rt_cargs {int gregs, fregs; };
+ 
+    On ROMP, all constants are in the data area.  */
+ 
+-#define SELECT_RTX_SECTION(MODE, X)	data_section ()
++#define SELECT_RTX_SECTION(MODE, X, ALIGN)	data_section ()
+ 
+ /* This macro generates the assembly code for function entry.
+    FILE is a stdio stream to output the code to.
+--- gcc/config/rs6000/aix.h.jj	Mon Jul 24 11:04:20 2000
++++ gcc/config/rs6000/aix.h	Fri Jun  8 20:30:39 2001
+@@ -202,7 +202,7 @@ toc_section ()						\
+    On the RS/6000, we have a special section for all variables except those
+    that are static.  */
+ 
+-#define SELECT_SECTION(EXP,RELOC)			\
++#define SELECT_SECTION(EXP,RELOC,ALIGN)			\
+ {							\
+   if ((TREE_CODE (EXP) == STRING_CST			\
+        && ! flag_writable_strings)			\
+@@ -233,7 +233,7 @@ toc_section ()						\
+    However, if this is being placed in the TOC it must be output as a
+    toc entry.  */
+ 
+-#define SELECT_RTX_SECTION(MODE, X)			\
++#define SELECT_RTX_SECTION(MODE, X, ALIGN)		\
+ { if (ASM_OUTPUT_SPECIAL_POOL_ENTRY_P (X, MODE))	\
+     toc_section ();					\
+   else							\
+--- gcc/config/rs6000/sysv4.h.jj	Mon Jul 24 11:04:20 2000
++++ gcc/config/rs6000/sysv4.h	Fri Jun  8 20:34:50 2001
+@@ -540,7 +540,7 @@ fini_section ()								\
+ 
+ /* Override elfos.h definition.  */
+ #undef	SELECT_RTX_SECTION
+-#define	SELECT_RTX_SECTION(MODE, X) rs6000_select_rtx_section (MODE, X)
++#define	SELECT_RTX_SECTION(MODE, X, ALIGN) rs6000_select_rtx_section (MODE, X)
+ 
+ /* A C statement or statements to switch to the appropriate
+    section for output of DECL.  DECL is either a `VAR_DECL' node
+@@ -549,7 +549,7 @@ fini_section ()								\
+ 
+ /* Override elfos.h definition.  */
+ #undef	SELECT_SECTION
+-#define	SELECT_SECTION(DECL,RELOC) rs6000_select_section (DECL, RELOC)
++#define	SELECT_SECTION(DECL,RELOC,ALIGN) rs6000_select_section (DECL, RELOC)
+ 
+ /* Return non-zero if this entry is to be written into the constant pool
+    in a special way.  We do so if this is a SYMBOL_REF, LABEL_REF or a CONST
+--- gcc/config/sparc/sparc.h.jj	Wed Jun  6 19:53:41 2001
++++ gcc/config/sparc/sparc.h	Fri Jun  8 20:30:39 2001
+@@ -913,7 +913,7 @@ if (TARGET_ARCH64				\
+ #endif
+ 
+ /* This is defined differently for v9 in a cover file.  */
+-#define SELECT_SECTION(T,RELOC)						\
++#define SELECT_SECTION(T,RELOC,ALIGN)					\
+ {									\
+   if (TREE_CODE (T) == VAR_DECL)					\
+     {									\
+@@ -946,7 +946,7 @@ if (TARGET_ARCH64				\
+ /* Use text section for a constant
+    unless we need more alignment than that offers.  */
+ /* This is defined differently for v9 in a cover file.  */
+-#define SELECT_RTX_SECTION(MODE, X)		\
++#define SELECT_RTX_SECTION(MODE, X, ALIGN)	\
+ {						\
+   if (GET_MODE_BITSIZE (MODE) <= MAX_TEXT_ALIGN \
+       && ! (flag_pic && (symbolic_operand ((X), (MODE)) || SUNOS4_SHARED_LIBRARIES)))  \
+--- gcc/config/sparc/sysv4.h.jj	Thu Oct 21 18:58:33 1999
++++ gcc/config/sparc/sysv4.h	Fri Jun  8 20:30:39 2001
+@@ -78,7 +78,7 @@ Boston, MA 02111-1307, USA.  */
+ 
+ /* Must use data section for relocatable constants when pic.  */
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE,RTX)		\
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN)	\
+ {						\
+   if (flag_pic && symbolic_operand ((RTX), (MODE))) \
+     data_section ();				\
+--- gcc/config/v850/v850.h.jj	Sun Jul  2 10:37:17 2000
++++ gcc/config/v850/v850.h	Fri Jun  8 20:30:39 2001
+@@ -1173,7 +1173,7 @@ zbss_section ()								\
+    Do not define this macro if you put all read-only variables and
+    constants in the read-only data section (usually the text section).  */
+ #undef  SELECT_SECTION
+-#define SELECT_SECTION(EXP, RELOC)					\
++#define SELECT_SECTION(EXP, RELOC, ALIGN)				\
+ do {									\
+   if (TREE_CODE (EXP) == VAR_DECL)					\
+     {									\
+@@ -1236,7 +1236,7 @@ do {									\
+ 
+    Do not define this macro if you put all constants in the read-only
+    data section.  */
+-/* #define SELECT_RTX_SECTION(MODE, RTX) */
++/* #define SELECT_RTX_SECTION(MODE, RTX, ALIGN) */
+ 
+ /* Output at beginning/end of assembler file.  */
+ #undef ASM_FILE_START
+--- gcc/config/vax/vms.h.jj	Wed Sep 15 23:41:16 1999
++++ gcc/config/vax/vms.h	Fri Jun  8 20:30:39 2001
+@@ -246,7 +246,7 @@ const_section ()					\
+    Since this macro is used in a number of places, we must also be able
+    to decide where to place string constants.  */
+ 
+-#define SELECT_SECTION(T,RELOC)						\
++#define SELECT_SECTION(T,RELOC,ALIGN)					\
+ {									\
+   if (TREE_CODE (T) == VAR_DECL)					\
+     {									\
+--- gcc/config/avr/avr.h.jj	Fri Jul  7 21:40:09 2000
++++ gcc/config/avr/avr.h	Fri Jun  8 20:30:39 2001
+@@ -2025,7 +2025,7 @@ progmem_section (void)							      \
+    If these items should be placed in the text section, this macro
+    should not be defined.  */
+ 
+-/* `SELECT_SECTION (EXP, RELOC)'
++/* `SELECT_SECTION (EXP, RELOC, ALIGN)'
+    A C statement or statements to switch to the appropriate section
+    for output of EXP.  You can assume that EXP is either a `VAR_DECL'
+    node or a constant of some sort.  RELOC indicates whether the
+@@ -2036,7 +2036,7 @@ progmem_section (void)							      \
+    Do not define this macro if you put all read-only variables and
+    constants in the read-only data section (usually the text section).  */
+ 
+-/* `SELECT_RTX_SECTION (MODE, RTX)'
++/* `SELECT_RTX_SECTION (MODE, RTX, ALIGN)'
+    A C statement or statements to switch to the appropriate section
+    for output of RTX in mode MODE.  You can assume that RTX is some
+    kind of constant in RTL.  The argument MODE is redundant except in
+--- gcc/config/mcore/mcore-pe.h.jj	Tue Feb 15 17:36:35 2000
++++ gcc/config/mcore/mcore-pe.h	Fri Jun  8 20:30:39 2001
+@@ -81,7 +81,7 @@ rdata_section ()						\
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ #undef  SELECT_SECTION
+-#define SELECT_SECTION(DECL, RELOC)					\
++#define SELECT_SECTION(DECL, RELOC, ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+@@ -111,7 +111,7 @@ rdata_section ()						\
+    in the case of a `const_int' rtx.  Currently, these always
+    go into the const section.  */
+ #undef  SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE, RTX) rdata_section ()
++#define SELECT_RTX_SECTION(MODE, RTX, ALIGN) rdata_section ()
+ 
+ #define MCORE_EXPORT_NAME(STREAM, NAME)			\
+   do							\
+--- gcc/config/ia64/sysv4.h.jj	Mon Jun 19 11:17:45 2000
++++ gcc/config/ia64/sysv4.h	Fri Jun  8 20:30:39 2001
+@@ -194,12 +194,12 @@ do {									\
+ /* We override svr4.h so that we can support the sdata section.  */
+ 
+ #undef SELECT_SECTION
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+       if (! flag_writable_strings)					\
+-	const_section ();						\
++	const_str_section ((DECL), (ALIGN));				\
+       else								\
+ 	data_section ();						\
+     }									\
+@@ -208,13 +208,20 @@ do {									\
+       if (XSTR (XEXP (DECL_RTL (DECL), 0), 0)[0]			\
+ 	  == SDATA_NAME_FLAG_CHAR)					\
+         sdata_section ();						\
+-      /* ??? We need the extra ! RELOC check, because the default is to \
++      /* ??? We need the extra RELOC check, because the default is to	\
+ 	 only check RELOC if flag_pic is set, and we don't set flag_pic \
+ 	 (yet?).  */							\
+-      else if (DECL_READONLY_SECTION (DECL, RELOC) && ! (RELOC))	\
++      else if (!DECL_READONLY_SECTION (DECL, RELOC) || (RELOC))		\
++	data_section ();						\
++      else if (flag_merge_constants < 2)				\
++	/* C and C++ don't allow different variables to share		\
++	   the same location.  -fmerge-all-constants allows		\
++	   even that (at the expense of not conforming).  */		\
+ 	const_section ();						\
++      else if (TREE_CODE (DECL_INITIAL (DECL)) == STRING_CST)		\
++	const_str_section (DECL_INITIAL (DECL), (ALIGN));		\
+       else								\
+-	data_section ();						\
++	const_var_section (DECL_MODE (DECL), (ALIGN));			\
+     }									\
+   /* This could be a CONSTRUCTOR containing ADDR_EXPR of a VAR_DECL,	\
+      in which case we can't put it in a shared library rodata.  */	\
+@@ -228,7 +235,7 @@ do {									\
+ 
+ extern unsigned int ia64_section_threshold;
+ #undef SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE, RTX)					\
++#define SELECT_RTX_SECTION(MODE, RTX, ALIGN)				\
+ {									\
+   if (GET_MODE_SIZE (MODE) > 0						\
+       && GET_MODE_SIZE (MODE) <= ia64_section_threshold)		\
+@@ -236,11 +243,19 @@ extern unsigned int ia64_section_thresho
+   else if (flag_pic && symbolic_operand ((RTX), (MODE)))		\
+     data_section ();							\
+   else									\
+-    const_section ();							\
++    const_var_section ((MODE), (ALIGN));				\
+ }
+ 
+ #undef EXTRA_SECTIONS
++#ifdef HAVE_GAS_SHF_MERGE
++#define EXTRA_SECTIONS in_const, in_ctors, in_dtors,			\
++  in_sdata, in_sbss, in_const_cst1, in_const_cst2, in_const_cst4,	\
++  in_const_cst8, in_const_cst16, 					\
++  in_const_str1 = 256, in_const_str2 = 256 + 32,			\
++  in_const_str4 = 256 + 2*32, in_const_str8 = 256 + 3*32
++#else
+ #define EXTRA_SECTIONS in_const, in_ctors, in_dtors, in_sdata, in_sbss
++#endif
+ 
+ #undef EXTRA_SECTION_FUNCTIONS
+ #define EXTRA_SECTION_FUNCTIONS						\
+@@ -248,7 +263,9 @@ extern unsigned int ia64_section_thresho
+   CTORS_SECTION_FUNCTION						\
+   DTORS_SECTION_FUNCTION						\
+   SDATA_SECTION_FUNCTION						\
+-  SBSS_SECTION_FUNCTION
++  SBSS_SECTION_FUNCTION							\
++  CONST_STR_SECTION_FUNCTION						\
++  CONST_VAR_SECTION_FUNCTION
+ 
+ #define SDATA_SECTION_ASM_OP ".sdata"
+ 
+--- gcc/config/d30v/d30v.h.jj	Tue Jul 25 21:16:21 2000
++++ gcc/config/d30v/d30v.h	Fri Jun  8 20:30:39 2001
+@@ -3910,7 +3910,7 @@ extern const char *d30v_branch_cost_stri
+    the read-only data section (usually the text section).
+ 
+    Defined in svr4.h.  */
+-/* #define SELECT_SECTION(EXP, RELOC) */
++/* #define SELECT_SECTION(EXP, RELOC, ALIGN) */
+ 
+ /* A C statement or statements to switch to the appropriate section for output
+    of RTX in mode MODE.  You can assume that RTX is some kind of constant in
+@@ -3922,7 +3922,7 @@ extern const char *d30v_branch_cost_stri
+    section.
+ 
+    Defined in svr4.h.  */
+-/* #define SELECT_RTX_SECTION(MODE, RTX) */
++/* #define SELECT_RTX_SECTION(MODE, RTX, ALIGN) */
+ 
+ /* Define this macro if jump tables (for `tablejump' insns) should be output in
+    the text section, along with the assembler instructions.  Otherwise, the
+--- gcc/config/elfos.h.jj	Fri Jun 16 13:10:29 2000
++++ gcc/config/elfos.h	Fri Jun  8 20:35:54 2001
+@@ -289,7 +289,15 @@ Boston, MA 02111-1307, USA.  */
+    includes this file.  */
+ 
+ #undef  EXTRA_SECTIONS
++#ifdef HAVE_GAS_SHF_MERGE
++#define EXTRA_SECTIONS in_const, in_ctors, in_dtors,	\
++  in_const_cst1, in_const_cst2, in_const_cst4, 		\
++  in_const_cst8, in_const_cst16, in_const_str1 = 256,	\
++  in_const_str2 = 256 + 32, in_const_str4 = 256 + 2*32,	\
++  in_const_str8 = 256 + 3*32
++#else
+ #define EXTRA_SECTIONS in_const, in_ctors, in_dtors
++#endif
+ 
+ /* A default list of extra section function definitions.  For targets
+    that use additional sections (e.g. .tdesc) you should override this
+@@ -299,10 +307,146 @@ Boston, MA 02111-1307, USA.  */
+ #define EXTRA_SECTION_FUNCTIONS		\
+   CONST_SECTION_FUNCTION		\
+   CTORS_SECTION_FUNCTION		\
+-  DTORS_SECTION_FUNCTION
++  DTORS_SECTION_FUNCTION		\
++  CONST_STR_SECTION_FUNCTION		\
++  CONST_VAR_SECTION_FUNCTION
+ 
+ #define READONLY_DATA_SECTION() const_section ()
+ 
++#ifdef HAVE_GAS_SUBSECTION_ORDERING
++#define USE_GAS_SUBSECTION_ORDERING 1
++#else
++#define USE_GAS_SUBSECTION_ORDERING 0
++#endif
++
++#ifdef HAVE_GAS_SHF_MERGE
++#define CONST_STR_SECTION_FUNCTION					\
++extern void const_str_section PARAMS ((tree, unsigned HOST_WIDE_INT));	\
++									\
++void									\
++const_str_section (decl, align)						\
++     tree decl;								\
++     unsigned HOST_WIDE_INT align;					\
++{									\
++  enum in_section in;							\
++  enum machine_mode mode;						\
++  const char *str;							\
++  int i, j, len, unit;							\
++									\
++  if (flag_merge_constants						\
++      && USE_CONST_SECTION						\
++      && TREE_CODE (decl) == STRING_CST					\
++      && TREE_CODE (TREE_TYPE (decl)) == ARRAY_TYPE			\
++      && align <= 256)							\
++    {									\
++      mode = TYPE_MODE (TREE_TYPE (TREE_TYPE (decl)));			\
++      switch (GET_MODE_BITSIZE (mode))					\
++	{								\
++	case 8: in = in_const_str1; break;				\
++	case 16: in = in_const_str2; break;				\
++	case 32: in = in_const_str4; break;				\
++	case 64: in = in_const_str8; break;				\
++	default: in = no_section; break;				\
++	}								\
++      if (align < GET_MODE_BITSIZE (mode))				\
++	align = GET_MODE_BITSIZE (mode);				\
++      if (in != no_section)						\
++	{								\
++	  str = TREE_STRING_POINTER (decl);				\
++	  len = TREE_STRING_LENGTH (decl);				\
++	  unit = GET_MODE_SIZE (mode);					\
++	  /* Check for embedded NUL characters.  */			\
++	  for (i = 0; i < len; i += unit)				\
++	    {								\
++	      for (j = 0; j < unit; j++)				\
++		if (str [i + j] != '\0')				\
++		  break;						\
++	      if (j == unit)						\
++		break;							\
++	    }								\
++	  if (i == len - unit)						\
++	    {								\
++	      unit = GET_MODE_BITSIZE (mode) / 8;			\
++	      if (!i && GET_MODE_BITSIZE (mode) < align)		\
++		{							\
++		  /* A "" string with requested alignment greater than	\
++		     character size might cause a problem:		\
++		     if some other string required even bigger		\
++		     alignment than "", then linker might think the	\
++		     "" is just part of padding after some other string	\
++		     and not put it into the hash table initially.	\
++		     But this means "" could have smaller alignment	\
++		     than requested.  */				\
++		  if (USE_GAS_SUBSECTION_ORDERING)			\
++		    {							\
++		      fprintf (asm_out_file,				\
++"\t.section\t.rodata.str%d.%d,\"aMS\",@progbits,%d\n\t.subsection\t-1\n",\
++			       unit, (int) (align / 8), unit);		\
++		      in_section = in;					\
++		    }							\
++		  else							\
++		    const_section ();					\
++		  return;						\
++		}							\
++	      in = (enum in_section) ((int) in + align / 8);		\
++	      if (in_section != in)					\
++		{							\
++		  fprintf (asm_out_file,				\
++"\t.section\t.rodata.str%d.%d,\"aMS\",@progbits,%d\n",			\
++			   unit, (int) (align / 8), unit);		\
++		  in_section = in;					\
++		}							\
++	      return;							\
++	    }								\
++	}								\
++    }									\
++  const_section ();							\
++}
++
++#define CONST_VAR_SECTION_FUNCTION					\
++extern void const_var_section						\
++  PARAMS ((enum machine_mode, unsigned HOST_WIDE_INT));			\
++									\
++void									\
++const_var_section (mode, align)						\
++     enum machine_mode mode;						\
++     unsigned HOST_WIDE_INT align;					\
++{									\
++  if (flag_merge_constants && mode != VOIDmode && mode != BLKmode	\
++      && GET_MODE_BITSIZE (mode) <= align)				\
++    {									\
++      enum in_section in;						\
++									\
++      switch (align)							\
++	{								\
++	case 8: in = in_const_cst1; break;				\
++	case 16: in = in_const_cst2; break;				\
++	case 32: in = in_const_cst4; break;				\
++	case 64: in = in_const_cst8; break;				\
++	case 128: in = in_const_cst16; break;				\
++	default: in = no_section; break;				\
++	}								\
++      if (in_section != no_section)					\
++	{								\
++	  if (in_section != in)						\
++	    {								\
++	      fprintf (asm_out_file,					\
++"\t.section\t.rodata.cst%d,\"aM\",@progbits,%d\n",			\
++		       (int) (align / 8), (int) (align / 8));		\
++	      in_section = in;						\
++	    }								\
++	  return;							\
++	}								\
++    }									\
++  const_section ();							\
++}
++#else
++#define CONST_STR_SECTION_FUNCTION
++#define CONST_VAR_SECTION_FUNCTION
++#define const_str_section(DECL,ALIGN) const_section ()
++#define const_var_section(MODE,ALIGN) const_section ()
++#endif
++
+ #define CONST_SECTION_FUNCTION					\
+ void								\
+ const_section ()						\
+@@ -464,23 +608,26 @@ dtors_section ()						\
+ /* A C statement or statements to switch to the appropriate
+    section for output of RTX in mode MODE.  RTX is some kind
+    of constant in RTL.  The argument MODE is redundant except
+-   in the case of a `const_int' rtx.  Currently, these always
+-   go into the const section.  */
++   in the case of a `const_int' rtx.
++   If assembler supports SHF_MERGE sections, put it into
++   a .rodata.cstN section where N is size of the constant,
++   otherwise into const section.  */
+ 
+ #undef  SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(MODE, RTX) const_section ()
++#define SELECT_RTX_SECTION(MODE, RTX, ALIGN)	\
++  const_var_section ((MODE), (ALIGN))
+ 
+ /* A C statement or statements to switch to the appropriate
+    section for output of DECL.  DECL is either a `VAR_DECL' node
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ 
+-#define SELECT_SECTION(DECL, RELOC)				\
++#define SELECT_SECTION(DECL, RELOC, ALIGN)			\
+ {								\
+   if (TREE_CODE (DECL) == STRING_CST)				\
+     {								\
+       if (! flag_writable_strings)				\
+-	const_section ();					\
++	const_str_section ((DECL), (ALIGN));			\
+       else							\
+ 	data_section ();					\
+     }								\
+@@ -492,8 +639,15 @@ dtors_section ()						\
+ 	  || (DECL_INITIAL (DECL) != error_mark_node		\
+ 	      && !TREE_CONSTANT (DECL_INITIAL (DECL))))		\
+ 	data_section ();					\
+-      else							\
++      else if (flag_merge_constants < 2)			\
++	/* C and C++ don't allow different variables to share	\
++	   the same location.  -fmerge-all-constants allows	\
++	   even that (at the expense of not conforming).  */	\
+ 	const_section ();					\
++      else if (TREE_CODE (DECL_INITIAL (DECL)) == STRING_CST)	\
++	const_str_section (DECL_INITIAL (DECL), (ALIGN));	\
++      else							\
++	const_var_section (DECL_MODE (DECL), (ALIGN));		\
+     }								\
+   else if (TREE_CODE (DECL) == CONSTRUCTOR)			\
+     {								\
+--- gcc/config/nextstep.h.jj	Wed Jun  7 08:41:10 2000
++++ gcc/config/nextstep.h	Fri Jun  8 20:30:30 2001
+@@ -460,7 +460,7 @@ objc_section_init ()				\
+ #define READONLY_DATA_SECTION const_section
+ 
+ #undef	SELECT_SECTION
+-#define SELECT_SECTION(exp,reloc)				\
++#define SELECT_SECTION(exp,reloc,align)				\
+   do								\
+     {								\
+       if (TREE_CODE (exp) == STRING_CST)			\
+@@ -578,7 +578,7 @@ objc_section_init ()				\
+   while (0)
+ 
+ #undef	SELECT_RTX_SECTION
+-#define SELECT_RTX_SECTION(mode, rtx)					\
++#define SELECT_RTX_SECTION(mode, rtx, align)				\
+   do									\
+     {									\
+       if (GET_MODE_SIZE(mode) == 8)					\
+--- gcc/config/svr3.h.jj	Tue Jan 18 22:33:02 2000
++++ gcc/config/svr3.h	Fri Jun  8 20:30:30 2001
+@@ -341,7 +341,7 @@ dtors_section ()							\
+    or a constant of some sort.  RELOC indicates whether forming
+    the initial value of DECL requires link-time relocations.  */
+ 
+-#define SELECT_SECTION(DECL,RELOC)					\
++#define SELECT_SECTION(DECL,RELOC,ALIGN)				\
+ {									\
+   if (TREE_CODE (DECL) == STRING_CST)					\
+     {									\
+@@ -371,4 +371,4 @@ dtors_section ()							\
+    in the case of a `const_int' rtx.  Currently, these always
+    go into the const section.  */
+ 
+-#define SELECT_RTX_SECTION(MODE,RTX) const_section()
++#define SELECT_RTX_SECTION(MODE,RTX,ALIGN) const_section()
+--- gcc/varasm.c.jj	Thu Jul 27 19:46:45 2000
++++ gcc/varasm.c	Fri Jun  8 20:30:39 2001
+@@ -481,7 +481,7 @@ variable_section (decl, reloc)
+ 	 for them.  */
+ 
+ #ifdef SELECT_SECTION
+-      SELECT_SECTION (decl, reloc);
++      SELECT_SECTION (decl, reloc, DECL_ALIGN (decl));
+ #else
+       if (DECL_READONLY_SECTION (decl, reloc))
+ 	readonly_data_section ();
+@@ -3182,13 +3182,19 @@ output_constant_def_contents (exp, reloc
+ {
+   int align;
+ 
++  /* Align the location counter as required by EXP's data type.  */
++  align = TYPE_ALIGN (TREE_TYPE (exp));
++#ifdef CONSTANT_ALIGNMENT
++  align = CONSTANT_ALIGNMENT (exp, align);
++#endif
++
+   if (IN_NAMED_SECTION (exp))
+     named_section (exp, NULL, reloc);
+   else
+     {
+       /* First switch to text section, except for writable strings.  */
+ #ifdef SELECT_SECTION
+-      SELECT_SECTION (exp, reloc);
++      SELECT_SECTION (exp, reloc, align);
+ #else
+       if (((TREE_CODE (exp) == STRING_CST) && flag_writable_strings)
+ 	  || (flag_pic && reloc))
+@@ -3198,12 +3204,6 @@ output_constant_def_contents (exp, reloc
+ #endif
+     }
+ 
+-  /* Align the location counter as required by EXP's data type.  */
+-  align = TYPE_ALIGN (TREE_TYPE (exp));
+-#ifdef CONSTANT_ALIGNMENT
+-  align = CONSTANT_ALIGNMENT (exp, align);
+-#endif
+-
+   if (align > BITS_PER_UNIT)
+     ASM_OUTPUT_ALIGN (asm_out_file, floor_log2 (align / BITS_PER_UNIT));
+ 
+@@ -3823,7 +3823,7 @@ output_constant_pool (fnname, fndecl)
+ 
+       /* First switch to correct section.  */
+ #ifdef SELECT_RTX_SECTION
+-      SELECT_RTX_SECTION (pool->mode, x);
++      SELECT_RTX_SECTION (pool->mode, x, pool->align * BITS_PER_UNIT);
+ #else
+       readonly_data_section ();
+ #endif
+--- gcc/configure.in.jj	Wed Jun  6 19:53:19 2001
++++ gcc/configure.in	Fri Jun  8 20:30:39 2001
+@@ -4558,6 +4558,26 @@ if test x$gcc_cv_as != x; then
+ fi
+ AC_MSG_RESULT($gcc_cv_as_hidden)
+ 
++AC_MSG_CHECKING(assembler section merging support)
++gcc_cv_as_shf_merge=no
++if test x$gcc_cv_gas_major_version != x -a x$gcc_cv_gas_minor_version != x; then
++  if test "$gcc_cv_gas_major_version" -eq 2 -a "$gcc_cv_gas_minor_version" -ge 12 -o "$gcc_cv_gas_major_version" -gt 2 && grep 'obj_format = elf' ../gas/Makefile > /dev/null; then
++    gcc_cv_as_subsections="working SHF_MERGE support"
++  fi
++elif test x$gcc_cv_as != x; then
++	# Check if we support SHF_MERGE sections
++	echo '.section .rodata.str, "aMS", @progbits, 1' > conftest.s
++	if $gcc_cv_as -o conftest.o conftest.s > /dev/null 2>&1; then
++		gcc_cv_as_shf_merge=yes
++	fi
++	rm -f conftest.s conftest.o
++fi
++if test x"$gcc_cv_as_shf_merge" = xyes; then
++	AC_DEFINE(HAVE_GAS_SHF_MERGE, 1,
++[Define if your assembler supports marking sections with SHF_MERGE flag.])
++fi
++AC_MSG_RESULT($gcc_cv_as_shf_merge)
++
+ case "$target" in 
+   sparc*-*-*)
+     AC_CACHE_CHECK([assembler .register pseudo-op support],
+--- gcc/config.in.jj	Tue Jul 18 21:15:42 2000
++++ gcc/config.in	Fri Jun  8 20:30:39 2001
+@@ -433,6 +433,9 @@
+ /* Define if your assembler supports .hidden. */
+ #undef HAVE_GAS_HIDDEN
+ 
++/* Define if your assembler supports marking sections with SHF_MERGE flag. */
++#undef HAVE_GAS_SHF_MERGE
++
+ /* Define if your assembler supports .register. */
+ #undef HAVE_AS_REGISTER_PSEUDO_OP
+ 
+--- gcc/tm.texi.jj	Wed Jun  6 19:53:22 2001
++++ gcc/tm.texi	Fri Jun  8 20:30:40 2001
+@@ -5077,25 +5077,26 @@ If these items should be placed in the t
+ not be defined.
+ 
+ @findex SELECT_SECTION
+-@item SELECT_SECTION (@var{exp}, @var{reloc})
++@item SELECT_SECTION (@var{exp}, @var{reloc}, @var{align})
+ A C statement or statements to switch to the appropriate section for
+ output of @var{exp}.  You can assume that @var{exp} is either a
+ @code{VAR_DECL} node or a constant of some sort.  @var{reloc}
+ indicates whether the initial value of @var{exp} requires link-time
+ relocations.  Select the section by calling @code{text_section} or one
+-of the alternatives for other sections.
++of the alternatives for other sections.  @var{align} is the constant
++alignment in bits.
+ 
+ Do not define this macro if you put all read-only variables and
+ constants in the read-only data section (usually the text section).
+ 
+ @findex SELECT_RTX_SECTION
+-@item SELECT_RTX_SECTION (@var{mode}, @var{rtx})
++@item SELECT_RTX_SECTION (@var{mode}, @var{rtx}, @var{align})
+ A C statement or statements to switch to the appropriate section for
+ output of @var{rtx} in mode @var{mode}.  You can assume that @var{rtx}
+ is some kind of constant in RTL.  The argument @var{mode} is redundant
+ except in the case of a @code{const_int} rtx.  Select the section by
+ calling @code{text_section} or one of the alternatives for other
+-sections.
++sections.  @var{align} is the constant alignment in bits.
+ 
+ Do not define this macro if you put all constants in the read-only
+ data section.
+--- gcc/configure.jj	Wed Jun  6 19:53:19 2001
++++ gcc/configure	Fri Jun  8 20:30:40 2001
+@@ -9066,6 +9066,29 @@ EOF
+ fi
+ echo "$ac_t""$gcc_cv_as_hidden" 1>&6
+ 
++echo $ac_n "checking assembler section merging support""... $ac_c" 1>&6
++echo "configure:6569: checking assembler section merging support" >&5
++gcc_cv_as_shf_merge=no
++if test x$gcc_cv_gas_major_version != x -a x$gcc_cv_gas_minor_version != x; then
++  if test "$gcc_cv_gas_major_version" -eq 2 -a "$gcc_cv_gas_minor_version" -ge 12 -o "$gcc_cv_gas_major_version" -gt 2 && grep 'obj_format = elf' ../gas/Makefile > /dev/null; then
++    gcc_cv_as_subsections="working SHF_MERGE support"
++  fi
++elif test x$gcc_cv_as != x; then
++	# Check if we support SHF_MERGE sections
++	echo '.section .rodata.str, "aMS", @progbits, 1' > conftest.s
++	if $gcc_cv_as -o conftest.o conftest.s > /dev/null 2>&1; then
++		gcc_cv_as_shf_merge=yes
++	fi
++	rm -f conftest.s conftest.o
++fi
++if test x"$gcc_cv_as_shf_merge" = xyes; then
++	cat >> confdefs.h <<\EOF
++#define HAVE_GAS_SHF_MERGE 1
++EOF
++
++fi
++echo "$ac_t""$gcc_cv_as_shf_merge" 1>&6
++
+ case "$target" in 
+   sparc*-*-*)
+     echo $ac_n "checking assembler .register pseudo-op support""... $ac_c" 1>&6
+--- gcc/toplev.c.jj	Wed Jun  6 19:53:45 2001
++++ gcc/toplev.c	Fri Jun  8 20:30:40 2001
+@@ -853,6 +853,11 @@ int flag_bounded_pointers = 0;
+    For CHILL: defaults to off.  */
+ int flag_bounds_check = 0;
+ 
++/* This will attempt to merge constant section constants, if 1 only
++   string constants and constants from constant pool, if 2 also constant
++   variables.  */
++int flag_merge_constants = 1;
++
+ /* If one, renumber instruction UIDs to reduce the number of
+    unused UIDs if there are a lot of instructions.  If greater than
+    one, unconditionally renumber instruction UIDs.  */
+@@ -1084,6 +1089,10 @@ lang_independent_options f_options[] =
+    "Align all labels" },
+   {"align-functions", &align_functions, 0,
+    "Align the start of functions" },
++  {"merge-constants", &flag_merge_constants, 1,
++   "Attempt to merge identical constants accross compilation units"},
++  {"merge-all-constants", &flag_merge_constants, 2,
++   "Attempt to merge identical constants and constant variables" },
+   {"check-memory-usage", &flag_check_memory_usage, 1,
+    "Generate code to check every memory access" },
+   {"prefix-function-name", &flag_prefix_function_name, 1,
+@@ -4517,6 +4526,11 @@ main (argc, argv)
+ 		}
+ 	    }
+ 	}
++    }
++
++  if (!optimize)
++    {
++      flag_merge_constants = 0;
+     }
+ 
+   if (optimize >= 1)
+--- gcc/flags.h.jj	Mon Jul 31 20:02:10 2000
++++ gcc/flags.h	Fri Jun  8 20:30:40 2001
+@@ -512,6 +512,11 @@ extern int flag_bounded_pointers;
+    For CHILL: defaults to off.  */
+ extern int flag_bounds_check;
+ 
++/* This will attempt to merge constant section constants, if 1 only
++   string constants and constants from constant pool, if 2 also constant
++   variables.  */
++extern int flag_merge_constants;
++
+ /* If one, renumber instruction UIDs to reduce the number of
+    unused UIDs if there are a lot of instructions.  If greater than
+    one, unconditionally renumber instruction UIDs.  */
+--- gcc/invoke.texi.jj	Wed Jun  6 19:53:42 2001
++++ gcc/invoke.texi	Fri Jun  8 20:32:17 2001
+@@ -170,10 +170,10 @@ in the following sections.
+ -fcaller-saves  -fcse-follow-jumps  -fcse-skip-blocks
+ -fdelayed-branch  -fdelete-null-pointer-checks -fexpensive-optimizations
+ -ffast-math  -ffloat-store  -fforce-addr  -fforce-mem -fno-math-errno
+--fdata-sections  -ffunction-sections  -fgcse 
+--finline-functions  -finline-limit=@var{n}  -fkeep-inline-functions
+--fmove-all-movables  -fno-default-inline  -fno-defer-pop
+--fno-function-cse  -fno-inline  -fno-peephole
++-fdata-sections  -ffunction-sections  -fgcse  -finline-functions
++-finline-limit=@var{n}  -fkeep-inline-functions -fmerge-constants
++-fmerge-all-constants  -fmove-all-movables -fno-default-inline
++-fno-defer-pop -fno-function-cse  -fno-inline  -fno-peephole
+ -fomit-frame-pointer  -foptimize-register-moves -foptimize-sibling-calls
+ -fregmove -frerun-cse-after-loop  -frerun-loop-opt  -freduce-all-givs
+ -fschedule-insns  -fschedule-insns2  -fssa -fstrength-reduce
+@@ -2598,6 +2598,23 @@ on, even if the variables aren't referen
+ GCC enables this option by default.  If you want to force the compiler to
+ check if the variable was referenced, regardless of whether or not
+ optimization is turned on, use the @samp{-fno-keep-static-consts} option.
++
++@item -fmerge-constants
++Attempt to merge identical constants (string constants and floating point
++constants) accross compilation units.
++
++This option is default for optimized compilation if assembler and linker
++support it.  Use @samp{-fno-merge-constants} to inhibit this behaviour.
++
++@item -fmerge-all-constants
++Attempt to merge identical constants and identical variables.
++
++This option implies @samp{-fmerge-constants}.  In addition to
++@samp{-fmerge-constants} this considers e.g. even constant initialized
++arrays or initialized constant variables with integral or floating point
++types.  Languages like C or C++ require each non-automatic variable to
++have distinct location, so using this option will result in non-conforming
++behaviour.
+ 
+ @item -fno-function-cse
+ Do not put function addresses in registers; make each instruction that

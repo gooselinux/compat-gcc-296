@@ -1,0 +1,31 @@
+2001-05-14  Jakub Jelinek  <jakub@redhat.com>
+
+	* jump.c (mark_modified_reg): Allow jump threading if condition
+	codes are represented by a hard register.
+
+--- gcc/jump.c.jj	Wed May  9 20:56:08 2001
++++ gcc/jump.c	Wed May 16 18:51:00 2001
+@@ -3745,7 +3745,7 @@ static int modified_mem;
+ static void
+ mark_modified_reg (dest, x, data)
+      rtx dest;
+-     rtx x ATTRIBUTE_UNUSED;
++     rtx x;
+      void *data ATTRIBUTE_UNUSED;
+ {
+   int regno;
+@@ -3763,7 +3763,13 @@ mark_modified_reg (dest, x, data)
+   regno = REGNO (dest);
+   if (regno >= FIRST_PSEUDO_REGISTER)
+     modified_regs[regno] = 1;
+-  else
++  /* Don't consider a hard condition code register as modified,
++     if it is being just set.  thread_jumps will check if it is set
++     to the same value.  */
++  else if (GET_MODE_CLASS (GET_MODE (dest)) != MODE_CC
++	   || GET_CODE (x) != SET
++	   || ! rtx_equal_p (dest, SET_DEST (x))
++	   || HARD_REGNO_NREGS (regno, GET_MODE (dest)) != 1)
+     for (i = 0; i < HARD_REGNO_NREGS (regno, GET_MODE (dest)); i++)
+       modified_regs[regno + i] = 1;
+ }

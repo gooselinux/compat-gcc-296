@@ -1,0 +1,36 @@
+2002-04-04  Richard Henderson  <rth@redhat.com>
+
+	PR opt/6165
+	* alias.c (true_dependence): Force (mem:blk (scratch)) to conflict.
+	(write_dependence_p): Likewise.
+
+--- gcc/alias.c.jj	Wed Mar 13 22:52:59 2002
++++ gcc/alias.c	Fri Apr 12 21:44:47 2002
+@@ -1570,6 +1570,13 @@ true_dependence (mem, mem_mode, x, varie
+   if (MEM_VOLATILE_P (x) && MEM_VOLATILE_P (mem))
+     return 1;
+ 
++  /* (mem:BLK (scratch)) is a special mechanism to conflict with everything.
++     This is used in epilogue deallocation functions.  */
++  if (GET_MODE (x) == BLKmode && GET_CODE (XEXP (x, 0)) == SCRATCH)
++    return 1;
++  if (GET_MODE (mem) == BLKmode && GET_CODE (XEXP (mem, 0)) == SCRATCH)
++    return 1;
++
+   if (DIFFERENT_ALIAS_SETS_P (x, mem))
+     return 0;
+ 
+@@ -1631,6 +1638,13 @@ write_dependence_p (mem, x, writep)
+   if (MEM_VOLATILE_P (x) && MEM_VOLATILE_P (mem))
+     return 1;
+ 
++  /* (mem:BLK (scratch)) is a special mechanism to conflict with everything.
++     This is used in epilogue deallocation functions.  */
++  if (GET_MODE (x) == BLKmode && GET_CODE (XEXP (x, 0)) == SCRATCH)
++    return 1;
++  if (GET_MODE (mem) == BLKmode && GET_CODE (XEXP (mem, 0)) == SCRATCH)
++    return 1;
++
+   if (DIFFERENT_ALIAS_SETS_P (x, mem))
+     return 0;
+ 

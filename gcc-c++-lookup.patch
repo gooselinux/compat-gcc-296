@@ -1,0 +1,58 @@
+2001-02-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* search.c (lookup_field_r): If looking for type and non-TYPE_DECL
+	is found, look first if name does not match the structure name.
+
+	* g++.old-deja/g++.other/lookup22.C: New test.
+
+--- gcc/cp/search.c.jj	Mon Feb 19 12:34:01 2001
++++ gcc/cp/search.c	Mon Feb 19 19:50:10 2001
+@@ -1382,11 +1382,27 @@ lookup_field_r (binfo, data)
+      we ignore all non-types we find.  */
+   if (lfi->want_type && TREE_CODE (nval) != TYPE_DECL)
+     {
+-      nval = purpose_member (lfi->name, CLASSTYPE_TAGS (type));
+-      if (nval)
+-	nval = TYPE_MAIN_DECL (TREE_VALUE (nval));
+-      else 
+-	return NULL_TREE;
++      if (lfi->name == TYPE_IDENTIFIER (type))
++	{
++	  /* If the aggregate has no user defined constructors, we allow
++	     it to have fields with the same name as the enclosing type.
++	     If we are looking for that name, find the corresponding
++	     TYPE_DECL.  */
++	  for (nval = TREE_CHAIN (nval); nval; nval = TREE_CHAIN (nval))
++	    if (DECL_NAME (nval) == lfi->name
++		&& TREE_CODE (nval) == TYPE_DECL)
++	      break;
++	}
++      else
++	nval = NULL_TREE;
++      if (!nval)
++	{
++	  nval = purpose_member (lfi->name, CLASSTYPE_TAGS (type));
++	  if (nval)
++	    nval = TYPE_MAIN_DECL (TREE_VALUE (nval));
++	  else 
++	    return NULL_TREE;
++	}
+     }
+ 
+   /* You must name a template base class with a template-id.  */
+--- gcc/testsuite/g++.old-deja/g++.other/lookup22.C.jj	Mon Feb 19 19:42:51 2001
++++ gcc/testsuite/g++.old-deja/g++.other/lookup22.C	Mon Feb 19 19:54:55 2001
+@@ -0,0 +1,13 @@
++// Test for proper handling of type lookup if base class has field with the
++// same name as the containing class.
++// Build don't link:
++
++struct a { int a; };
++struct b : a {};
++
++b x;
++
++void foo ()
++{
++  x.a = 22;
++}

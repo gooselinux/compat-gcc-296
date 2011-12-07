@@ -1,0 +1,252 @@
+2001-03-06  Zack Weinberg  <zackw@stanford.edu>
+
+        * cpplex.c (_cpp_lex_token): Just return CPP_ATSIGN for '@'.
+        * cpplib.h (TTYPE_TABLE): Add CPP_ATSIGN, drop CPP_OSTRING.
+
+        * cppmacro.c, cpplex.c: Remove references to CPP_OSTRING.
+
+	* objc/execute/string3.m: New test.
+
+2001-03-03  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+        * cpplex.c (_cpp_lex_token): Don't warn about directives in
+        macro arguments when looking for the '('.
+        * cppmacro.c (funlike_invocation_p): Set parsing_args to
+        2 when really parsing arguments; 1 when looking for '('.
+        Always restore the lexer position.
+
+	* testsuite/gcc.dg/cpp/macro7.c: New test.
+
+Fri Mar  2 12:18:13 2001  Christopher Faylor <cgf@cygnus.com>
+
+        * cppinit.c (append_include_chain): Mark "after" include file name list
+        as a system directory.
+
+--- gcc/testsuite/objc/execute/string3.m.jj	Fri Mar  9 19:21:36 2001
++++ gcc/testsuite/objc/execute/string3.m	Fri Mar  9 19:21:36 2001
+@@ -0,0 +1,12 @@
++#include <string.h>
++#include <stdlib.h>
++#include <objc/NXConstStr.h>
++
++#define STRING "this is a string"
++
++int main (int argc, void **args)
++{
++  if (strcmp ([@STRING cString], STRING))
++    abort ();
++  return 0;
++}
+--- gcc/testsuite/gcc.dg/cpp/macro7.c.jj	Fri Mar  9 19:23:10 2001
++++ gcc/testsuite/gcc.dg/cpp/macro7.c	Fri Mar  9 19:23:10 2001
+@@ -0,0 +1,10 @@
++/* { dg-do preprocess } */
++
++/* Test we don't complain about directives in macro expansions when
++   looking for the '(' of a function-like macro.
++
++   Submitter: Neil Booth. 3 Mar 2000.  */
++
++#define f(x) x
++f
++#define g
+--- gcc/cppinit.c.jj	Tue Feb 27 20:06:51 2001
++++ gcc/cppinit.c	Fri Mar  9 19:05:50 2001
+@@ -237,7 +237,10 @@ append_include_chain (pfile, dir, path, 
+   new->nlen = len;
+   new->ino  = st.st_ino;
+   new->dev  = st.st_dev;
+-  if (path == SYSTEM)
++  /* Both system and after include file lists should be treated as system
++     include files since these two lists are really just a concatenation
++     of one "system" list. */
++  if (path == SYSTEM || path == AFTER)
+ #ifdef NO_IMPLICIT_EXTERN_C
+     new->sysp = 1;
+ #else
+--- gcc/cpplex.c.jj	Tue Feb 27 20:06:51 2001
++++ gcc/cpplex.c	Fri Mar  9 19:23:10 2001
+@@ -1175,38 +1175,36 @@ _cpp_lex_token (pfile, result)
+ 
+       result->type = CPP_HASH;
+     do_hash:
+-      if (bol)
++      if (!bol)
++	break;
++      /* 6.10.3 paragraph 11: If there are sequences of preprocessing
++	 tokens within the list of arguments that would otherwise act
++	 as preprocessing directives, the behavior is undefined.
++
++	 This implementation will report a hard error, terminate the
++	 macro invocation, and proceed to process the directive.  */
++      if (pfile->state.parsing_args)
+ 	{
+-	  if (pfile->state.parsing_args)
+-	    {
+-	      /* 6.10.3 paragraph 11: If there are sequences of
+-		 preprocessing tokens within the list of arguments that
+-		 would otherwise act as preprocessing directives, the
+-		 behavior is undefined.
+-
+-		 This implementation will report a hard error, terminate
+-		 the macro invocation, and proceed to process the
+-		 directive.  */
+-	      cpp_error (pfile,
+-			 "directives may not be used inside a macro argument");
+-
+-	      /* Put a '#' in lookahead, return CPP_EOF for parse_arg.  */
+-	      buffer->extra_char = buffer->read_ahead;
+-	      buffer->read_ahead = '#';
+-	      pfile->state.next_bol = 1;
+-	      result->type = CPP_EOF;
+-
+-	      /* Get whitespace right - newline_in_args sets it.  */
+-	      if (pfile->lexer_pos.col == 1)
+-		result->flags &= ~(PREV_WHITE | AVOID_LPASTE);
+-	    }
+-	  else
+-	    {
+-	      /* This is the hash introducing a directive.  */
+-	      if (_cpp_handle_directive (pfile, result->flags & PREV_WHITE))
+-		goto done_directive; /* bol still 1.  */
+-	      /* This is in fact an assembler #.  */
+-	    }
++	  if (pfile->state.parsing_args == 2)
++	    cpp_error (pfile,
++		       "directives may not be used inside a macro argument");
++
++	  /* Put a '#' in lookahead, return CPP_EOF for parse_arg.  */
++	  buffer->extra_char = buffer->read_ahead;
++	  buffer->read_ahead = '#';
++	  pfile->state.next_bol = 1;
++	  result->type = CPP_EOF;
++
++	  /* Get whitespace right - newline_in_args sets it.  */
++	  if (pfile->lexer_pos.col == 1)
++	    result->flags &= ~(PREV_WHITE | AVOID_LPASTE);
++	}
++      else
++	{
++	  /* This is the hash introducing a directive.  */
++	  if (_cpp_handle_directive (pfile, result->flags & PREV_WHITE))
++	    goto done_directive; /* bol still 1.  */
++	  /* This is in fact an assembler #.  */
+ 	}
+       break;
+ 
+@@ -1247,29 +1245,8 @@ _cpp_lex_token (pfile, result)
+     case '}': result->type = CPP_CLOSE_BRACE; break;
+     case ';': result->type = CPP_SEMICOLON; break;
+ 
+-    case '@':
+-      if (CPP_OPTION (pfile, objc))
+-	{
+-	  /* In Objective C, '@' may begin keywords or strings, like
+-	     @keyword or @"string".  It would be nice to call
+-	     get_effective_char here and test the result.  However, we
+-	     would then need to pass 2 characters to parse_identifier,
+-	     making it ugly and slowing down its main loop.  Instead,
+-	     we assume we have an identifier, and recover if not.  */
+-	  result->type = CPP_NAME;
+-	  result->val.node = parse_identifier (pfile, c);
+-	  if (result->val.node->length != 1)
+-	    break;
+-
+-	  /* OK, so it wasn't an identifier.  Maybe a string?  */
+-	  if (buffer->read_ahead == '"')
+-	    {
+-	      c = '"';
+-	      ACCEPT_CHAR (CPP_OSTRING);
+-	      goto make_string;
+-	    }
+-	}
+-      goto random_char;
++      /* @ is a punctuator in Objective C.  */
++    case '@': result->type = CPP_ATSIGN; break;
+ 
+     random_char:
+     default:
+@@ -1346,7 +1323,6 @@ cpp_spell_token (pfile, token, buffer)
+ 	  {
+ 	  case CPP_STRING:	left = '"';  right = '"';  tag = '\0'; break;
+ 	  case CPP_WSTRING:	left = '"';  right = '"';  tag = 'L';  break;
+-	  case CPP_OSTRING:	left = '"';  right = '"';  tag = '@';  break;
+ 	  case CPP_CHAR:	left = '\''; right = '\''; tag = '\0'; break;
+     	  case CPP_WCHAR:	left = '\''; right = '\''; tag = 'L';  break;
+ 	  case CPP_HEADER_NAME:	left = '<';  right = '>';  tag = '\0'; break;
+@@ -1436,7 +1412,6 @@ cpp_output_token (token, fp)
+ 	  {
+ 	  case CPP_STRING:	left = '"';  right = '"';  tag = '\0'; break;
+ 	  case CPP_WSTRING:	left = '"';  right = '"';  tag = 'L';  break;
+-	  case CPP_OSTRING:	left = '"';  right = '"';  tag = '@';  break;
+ 	  case CPP_CHAR:	left = '\''; right = '\''; tag = '\0'; break;
+     	  case CPP_WCHAR:	left = '\''; right = '\''; tag = 'L';  break;
+ 	  case CPP_HEADER_NAME:	left = '<';  right = '>';  tag = '\0'; break;
+@@ -1603,13 +1578,6 @@ cpp_can_paste (pfile, token1, token2, di
+ 	  && VALID_SIGN ('+', token1->val.str.text[token1->val.str.len - 1]))
+ 	return CPP_NUMBER;
+       break;
+-
+-    case CPP_OTHER:
+-      if (CPP_OPTION (pfile, objc) && token1->val.c == '@')
+-	{
+-	  if (b == CPP_NAME)	return CPP_NAME;
+-	  if (b == CPP_STRING)	return CPP_OSTRING;
+-	}
+ 
+     default:
+       break;
+--- gcc/cpplib.h.jj	Tue Feb 27 20:06:50 2001
++++ gcc/cpplib.h	Fri Mar  9 19:21:36 2001
+@@ -119,6 +119,7 @@ struct file_name_map_list;
+   OP(CPP_SCOPE,		"::")			\
+   OP(CPP_DEREF_STAR,	"->*")			\
+   OP(CPP_DOT_STAR,	".*")			\
++  OP(CPP_ATSIGN,	"@")  /* used in Objective C */ \
+ \
+   TK(CPP_NAME,		SPELL_IDENT)	/* word */			\
+   TK(CPP_INT,		SPELL_STRING)	/* 23 */			\
+@@ -131,7 +132,6 @@ struct file_name_map_list;
+ \
+   TK(CPP_STRING,	SPELL_STRING)	/* "string" */			\
+   TK(CPP_WSTRING,	SPELL_STRING)	/* L"string" */			\
+-  TK(CPP_OSTRING,	SPELL_STRING)	/* @"string" - Objective C */	\
+   TK(CPP_HEADER_NAME,	SPELL_STRING)	/* <stdio.h> in #include */	\
+ \
+   TK(CPP_COMMENT,	SPELL_STRING)	/* Only if output comments.  */ \
+--- gcc/cppmacro.c.jj	Tue Feb 27 20:06:50 2001
++++ gcc/cppmacro.c	Fri Mar  9 19:23:10 2001
+@@ -299,8 +299,7 @@ stringify_arg (pfile, arg)
+       unsigned int len = cpp_token_len (token);
+ 
+       escape_it = (token->type == CPP_STRING || token->type == CPP_WSTRING
+-		   || token->type == CPP_CHAR || token->type == CPP_WCHAR
+-		   || token->type == CPP_OSTRING);
++		   || token->type == CPP_CHAR || token->type == CPP_WCHAR);
+ 
+       if (escape_it)
+ 	/* Worst case is each char is octal.  */
+@@ -610,6 +609,7 @@ funlike_invocation_p (pfile, node, list)
+   cpp_start_lookahead (pfile);
+   cpp_get_token (pfile, &maybe_paren);
+   cpp_stop_lookahead (pfile, maybe_paren.type == CPP_OPEN_PAREN);
++  pfile->state.parsing_args = 2;
+ 
+   if (maybe_paren.type == CPP_OPEN_PAREN)
+     args = parse_args (pfile, node);
+@@ -623,11 +623,12 @@ funlike_invocation_p (pfile, node, list)
+   pfile->state.prevent_expansion--;
+   pfile->state.parsing_args = 0;
+ 
++  /* Reset the position in case of failure.  If success, the macro's
++     expansion appears where the name would have.  */
++  pfile->lexer_pos = macro_pos;
++
+   if (args)
+     {
+-      /* The macro's expansion appears where the name would have.  */
+-      pfile->lexer_pos = macro_pos;
+-
+       if (node->value.macro->paramc > 0)
+ 	{
+ 	  /* Don't save tokens during pre-expansion.  */

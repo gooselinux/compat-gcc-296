@@ -1,0 +1,24 @@
+2001-05-10  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-lex.c (check_newline): ident etc. can appear as TYPENAME or
+	OBJECTNAME token as well.
+
+	* gcc.c-torture/compile/20010510-1.c: New test.
+
+--- gcc/c-lex.c.jj	Wed May  9 20:56:44 2001
++++ gcc/c-lex.c	Thu May 10 11:07:14 2001
+@@ -614,7 +614,7 @@ check_newline ()
+ 
+   token = yylex ();
+ 
+-  if (token == IDENTIFIER)
++  if (token == IDENTIFIER || token == TYPENAME || token == OBJECTNAME)
+     {
+       /* If a letter follows, then if the word here is `line', skip
+ 	 it and ignore it; otherwise, ignore the line, with an error
+--- gcc/testsuite/gcc.c-torture/compile/20010510-1.c.jj	Thu May 10 11:07:40 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010510-1.c	Thu May 10 11:04:47 2001
+@@ -0,0 +1,3 @@
++typedef char *ident;
++#ident "This is ident"
++ident i;

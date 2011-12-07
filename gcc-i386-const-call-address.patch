@@ -1,0 +1,42 @@
+2001-01-07  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.c (constant_call_address_operand): Accept
+	(const (plus (symbol_ref) (const_int))).
+	* config/i386/i386.h (PREDICATE_CODES): Add CONST for
+	constant_call_address_operand.
+
+	* gcc.c-torture/compile/20010107-1.c: New test.
+
+--- gcc/config/i386/i386.c.jj	Sun Jan  7 12:30:28 2001
++++ gcc/config/i386/i386.c	Sun Jan  7 13:17:40 2001
+@@ -1109,6 +1109,10 @@ constant_call_address_operand (op, mode)
+      rtx op;
+      enum machine_mode mode ATTRIBUTE_UNUSED;
+ {
++  if (GET_CODE (op) == CONST
++      && GET_CODE (XEXP (op, 0)) == PLUS
++      && GET_CODE (XEXP (XEXP (op, 0), 1)) == CONST_INT)
++    op = XEXP (XEXP (op, 0), 0);
+   return GET_CODE (op) == SYMBOL_REF;
+ }
+ 
+--- gcc/config/i386/i386.h.jj	Sun Jan  7 12:30:28 2001
++++ gcc/config/i386/i386.h	Sun Jan  7 13:19:00 2001
+@@ -2830,7 +2830,7 @@ do { long l;						\
+ 		       LABEL_REF, SUBREG, REG, MEM}},			\
+   {"pic_symbolic_operand", {CONST}},					\
+   {"call_insn_operand", {REG, SUBREG, MEM, SYMBOL_REF}},		\
+-  {"constant_call_address_operand", {SYMBOL_REF}},			\
++  {"constant_call_address_operand", {SYMBOL_REF, CONST}},		\
+   {"const0_operand", {CONST_INT, CONST_DOUBLE}},			\
+   {"const1_operand", {CONST_INT}},					\
+   {"const248_operand", {CONST_INT}},					\
+--- gcc/testsuite/gcc.c-torture/compile/20010107-1.c.jj	Sun Jan  7 13:26:48 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010107-1.c	Sun Jan  7 13:26:41 2001
+@@ -0,0 +1,6 @@
++unsigned long x[4];
++
++void foo(void)
++{
++  ((void (*)())(x+2))();
++}

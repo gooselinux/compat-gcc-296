@@ -1,0 +1,46 @@
+2001-04-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* recog.c (validate_replace_rtx_1): Avoid creating (const (const ()).
+
+	* gcc.c-torture/compile/20010426-1.c: New test.
+
+--- gcc/recog.c.jj	Tue Apr 24 09:59:31 2001
++++ gcc/recog.c	Thu Apr 26 11:59:32 2001
+@@ -679,7 +679,14 @@ validate_replace_rtx_1 (loc, from, to, o
+ 	}
+ 
+       break;
+-      
++
++    case CONST:
++      /* Avoid creating (const (const ()).  */
++      validate_replace_rtx_1 (&XEXP (x, 0), from, to, object);
++      if (GET_CODE (XEXP (x, 0)) == CONST)
++	validate_change (object, &XEXP (x, 0), XEXP (XEXP (x, 0), 0), 1);
++      return;
++
+     default:
+       break;
+     }
+--- gcc/testsuite/gcc.c-torture/compile/20010426-1.c.jj	Sat Mar 24 04:35:12 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010426-1.c	Thu Apr 26 12:01:43 2001
+@@ -0,0 +1,19 @@
++struct { char *m; long n; } a[20];
++int b = 20, c;
++void bar(void) __attribute__((__noreturn__));
++
++int
++foo(int x)
++{
++  int i;
++
++  for (i = 0; i < x; i++)
++    {
++      a[0].m = "a"; a[0].n = 10; c=1;
++      a[c].m = "b"; a[c].n = 32; c++;
++      if (c >= b) bar ();
++      a[c].m = "c"; a[c].n = 80; c++;
++      if (c >= b) bar ();
++    }
++  return 0;
++}

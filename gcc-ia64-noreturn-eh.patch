@@ -1,0 +1,76 @@
+2004-08-01  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/ia64.c (rtx_needs_barrier): Handle break.
+
+2001-05-11  Richard Henderson  <rth@redhat.com>
+
+	* config/ia64/ia64.c (ia64_reorg): Emit a break after a noreturn
+	call that ends a function.
+	* config/ia64/ia64.md (break_f): New.
+
+--- gcc/config/ia64/ia64.md.jj	2004-08-01 15:22:28.000000000 +0200
++++ gcc/config/ia64/ia64.md	2004-08-01 21:49:31.365630016 +0200
+@@ -68,6 +68,7 @@
+ ;;	0	alloc
+ ;;	1	blockage
+ ;;	2	insn_group_barrier
++;;	3	break
+ ;;	5	set_bsp
+ ;;	7	pred.rel.mutex
+ ;;	8	pred.safe_across_calls all
+@@ -3775,6 +3776,11 @@
+   [(set_attr "type" "S")
+    (set_attr "predicable" "no")])
+ 
++(define_insn "break_f"
++  [(unspec_volatile [(const_int 0)] 3)]
++  ""
++  "break.f 0"
++  [(set_attr "type" "F")])
+ 
+ ;; Non-local goto support.
+ 
+--- gcc/config/ia64/ia64.c.jj	2004-08-01 15:22:30.000000000 +0200
++++ gcc/config/ia64/ia64.c	2004-08-01 21:43:59.426631165 +0200
+@@ -4108,6 +4108,7 @@ rtx_needs_barrier (x, flags, pred)
+ 
+ 	case 1: /* blockage */
+ 	case 2: /* insn group barrier */
++	case 3: /* break */
+ 	  return 0;
+ 
+ 	case 5: /* set_bsp  */
+@@ -4583,6 +4584,33 @@ ia64_reorg (insns)
+   emit_predicate_relation_info (insns);
+   emit_insn_group_barriers (insns);
+   fixup_errata (insns);
++
++  /* A call must not be the last instruction in a function, so that the
++     return address is still within the function, so that unwinding works
++     properly.  Note that IA-64 differs from dwarf2 on this point.  */
++  if (flag_unwind_tables || (flag_exceptions && !exceptions_via_longjmp))
++    {
++      rtx insn;
++      int saw_stop = 0;
++
++      insn = get_last_insn ();
++      if (! INSN_P (insn))
++	insn = prev_active_insn (insn);
++      if (GET_CODE (insn) == INSN
++	  && GET_CODE (PATTERN (insn)) == UNSPEC_VOLATILE
++	  && XINT (PATTERN (insn), 1) == 2 /* insn_group_barrier */)
++	{
++	  saw_stop = 1;
++	  insn = prev_active_insn (insn);
++	}
++      if (GET_CODE (insn) == CALL_INSN)
++	{
++	  if (! saw_stop)
++	    emit_insn (gen_insn_group_barrier ());
++	  emit_insn (gen_break_f ());
++	  emit_insn (gen_insn_group_barrier ());
++	}
++    }
+ }
+ 
+ /* Return true if REGNO is used by the epilogue.  */

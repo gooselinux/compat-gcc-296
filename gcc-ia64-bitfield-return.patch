@@ -1,0 +1,55 @@
+2001-11-16  Andrew Macleod  <amacleod@cygnus.com>
+
+	* stmt.c (expand_return): Clear dest instead of clobbering it when
+	setting a return value via bitsets.
+
+2001-11-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20011120-1.c: New test.
+
+--- gcc/testsuite/gcc.c-torture/execute/20011120-1.c.jj	Tue Nov 20 15:02:32 2001
++++ gcc/testsuite/gcc.c-torture/execute/20011120-1.c	Tue Nov 20 15:02:25 2001
+@@ -0,0 +1,30 @@
++struct s {
++  int i;
++  int j;
++};
++
++void baz (void) { }
++
++struct s foo (void)
++{
++  struct s l;
++  l.i = 0;
++  l.j = 0;
++  baz ();
++  return l;
++}
++
++void bar (long l)
++{
++  if (l != 1)
++    abort ();
++}
++
++int main (void)
++{
++  union { struct s s; long l; } x;
++  x.s = foo ();
++  x.l++;
++  bar (x.l);
++  exit (0);
++}
+--- gcc/stmt.c.jj	Mon Nov 12 15:46:09 2001
++++ gcc/stmt.c	Tue Nov 20 14:59:20 2001
+@@ -2942,8 +2942,8 @@ expand_return (retval)
+ 	      dst = gen_reg_rtx (word_mode);
+ 	      result_pseudos[xbitpos / BITS_PER_WORD] = dst;
+ 
+-	      /* Clobber the destination before we move anything into it.  */
+-	      emit_insn (gen_rtx_CLOBBER (VOIDmode, dst));
++	      /* Clear the destination before we move anything into it.  */
++	      emit_move_insn (dst,  CONST0_RTX (GET_MODE (dst)));
+ 	    }
+ 
+ 	  /* We need a new source operand each time bitpos is on a word

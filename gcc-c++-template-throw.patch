@@ -1,0 +1,55 @@
+2001-08-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* typeck2.c (add_exception_specifier): Only require complete type if
+	not in processing template declaration.
+
+	* g++.old-deja/g++.eh/tmpl7.C: New test.
+
+--- gcc/cp/typeck2.c.jj	Sun Jul 22 21:34:46 2001
++++ gcc/cp/typeck2.c	Fri Aug 17 18:24:25 2001
+@@ -1293,9 +1293,11 @@ add_exception_specifier (list, spec, com
+     ok = is_ptr;
+   else if (TREE_CODE (core) == TEMPLATE_TYPE_PARM)
+     ok = 1;
++  else if (processing_template_decl)
++    ok = 1;
+   else
+     ok = COMPLETE_TYPE_P (complete_type (core));
+-  
++
+   if (ok)
+     {
+       tree probe;
+--- gcc/testsuite/g++.old-deja/g++.eh/tmpl7.C.jj	Fri Aug 17 18:45:13 2001
++++ gcc/testsuite/g++.old-deja/g++.eh/tmpl7.C	Fri Aug 17 18:41:49 2001
+@@ -0,0 +1,30 @@
++class A {};
++
++template <class T>
++struct B
++{
++  typedef A E;
++};
++
++template <class T>
++struct C
++{
++  typedef B<T> D;
++  typedef typename D::E E;
++  void f() throw(E) { throw E(); }
++};
++
++int main()
++{
++  int caught = 0;
++  try
++    {
++      C<int> x;
++      x.f();
++    }
++  catch (A)
++    {
++      ++caught;
++    }
++  return caught != 1;
++}

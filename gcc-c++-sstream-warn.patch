@@ -1,0 +1,15 @@
+2001-07-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* sstream (std::stringbuf::sync): Avoid warnings.
+
+--- libstdc++/sstream.jj	Mon Apr 24 19:31:57 2000
++++ libstdc++/sstream	Tue Jul 24 11:48:18 2001
+@@ -168,7 +168,7 @@ inline int std::stringbuf::sync()
+   if(n)
+     {
+       buf.replace(rpos, std::string::npos, pbase(), n);
+-      if(buf.size() - rpos != n)
++      if(buf.size() - rpos != (std::string::size_type) n)
+ 	return EOF;
+       rpos += n;
+       pbump(-n);

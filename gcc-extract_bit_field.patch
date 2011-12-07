@@ -1,0 +1,40 @@
+2001-01-30  DJ Delorie  <dj@redhat.com>
+
+	* expmed.c (extract_bit_field): allow non-integral modes if we
+	want to extract a whole register from itself.
+
+2001-01-13  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/compile/20001212-1.c: New test.
+
+--- gcc/expmed.c.jj	Tue Jan 30 10:12:59 2001
++++ gcc/expmed.c	Wed Jan 31 13:48:41 2001
+@@ -1030,6 +1030,15 @@ extract_bit_field (str_rtx, bitsize, bit
+       op0 = SUBREG_REG (op0);
+     }
+ 
++  if (GET_CODE (op0) == REG
++      && mode == GET_MODE (op0)
++      && bitnum == 0
++      && bitsize == GET_MODE_BITSIZE (GET_MODE (op0)))
++    {
++      /* We're trying to extract a full register from itself.  */
++      return op0;
++    }
++
+   /* Make sure we are playing with integral modes.  Pun with subregs
+      if we aren't.  */
+   {
+--- gcc/testsuite/gcc.c-torture/compile/20001212-1.c.jj	Wed Jan 31 13:49:53 2001
++++ gcc/testsuite/gcc.c-torture/compile/20001212-1.c	Sat Jan 13 23:36:16 2001
+@@ -0,0 +1,10 @@
++typedef struct
++{
++  long double l;
++} ld;
++
++ld a (ld x, ld y)
++{
++  ld b;
++  b.l = x.l + y.l;
++}

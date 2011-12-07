@@ -1,0 +1,32 @@
+2000-12-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* typeck.c (c_sizeof): Temporarily disable returning
+	c_size_type_node for sizeof, it breaks other things.
+	* method.c (process_overload_item): Special case sizetype,
+	use c_size_type_node instead.
+
+--- gcc/cp/typeck.c.jj	Fri Dec  8 21:31:42 2000
++++ gcc/cp/typeck.c	Mon Dec 11 12:04:06 2000
+@@ -1597,9 +1597,11 @@ c_sizeof (type)
+      TYPE_IS_SIZETYPE means that certain things (like overflow) will
+      never happen.  However, this node should really have type
+      `size_t', which is just a typedef for an ordinary integer type.  */
++  /*     
+   size = fold (build1 (NOP_EXPR, c_size_type_node, size));
+   my_friendly_assert (!TYPE_IS_SIZETYPE (TREE_TYPE (size)), 
+ 		      20001021);
++   */
+   return size;
+ }
+ 
+--- gcc/cp/method.c.jj	Mon Jul 17 10:26:15 2000
++++ gcc/cp/method.c	Mon Dec 11 12:21:31 2000
+@@ -1420,6 +1420,8 @@ process_overload_item (parmtype, extra_G
+       }
+ 
+     case INTEGER_TYPE:
++      if (parmtype == sizetype)
++	parmtype = c_size_type_node;
+       if (parmtype == integer_type_node
+           || parmtype == unsigned_type_node
+ 	  || parmtype == java_int_type_node)

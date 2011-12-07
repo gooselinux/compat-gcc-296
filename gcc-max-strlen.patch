@@ -1,0 +1,34 @@
+2000-12-01  Geoffrey Keating  <geoffk@redhat.com>
+
+	* c-common.c (combine_strings): When the ISO C standard specifies
+ 	the maximum length of a string, it doesn't include the trailing
+ 	zero byte.
+
+2000-12-01  Geoffrey Keating  <geoffk@redhat.com>
+
+	* gcc.dg/20001201-1.c: New testcase.
+
+--- gcc/c-common.c.jj	Tue Dec 19 09:21:56 2000
++++ gcc/c-common.c	Thu Dec 21 13:12:15 2000
+@@ -374,9 +374,9 @@ combine_strings (strings)
+   /* Compute the number of elements, for the array type.  */
+   nchars = wide_flag ? length / wchar_bytes : length;
+ 
+-  if (pedantic && nchars > nchars_max)
++  if (pedantic && nchars - 1 > nchars_max && c_language == clk_c)
+     pedwarn ("string length `%d' is greater than the minimum length `%d' ISO C%d is required to support",
+-	     nchars, nchars_max, flag_isoc99 ? 99 : 89);
++	     nchars - 1, nchars_max, flag_isoc99 ? 99 : 89);
+ 
+   /* Create the array type for the string constant.
+      -Wwrite-strings says make the string constant an array of const char
+--- gcc/testsuite/gcc.dg/20001201-1.c.jj	Thu Dec 21 13:10:57 2000
++++ gcc/testsuite/gcc.dg/20001201-1.c	Thu Dec 21 13:10:57 2000
+@@ -0,0 +1,7 @@
++/* { dg-do compile } */
++/* { dg-options "-pedantic" } */
++char *s =
++"0123456789101214161820222426283032343638404244464850525456586062646668707274767880828486889092949698100103106109112115118121124127130133136139142145148151154157160163166169172175178181184187190193196199202205208211214217220223226229232235238241244247250253256259262265268271274277280283286289292295298301304307310313316319322325328331334337340343346349352355358361364367370373376379382385388391394397400403406409412415418421424427430433436439442445448451454457460463466469472475478481484487490493496499502"
++"505x";  /* { dg-bogus "greater than the minimum length" } */
++
++

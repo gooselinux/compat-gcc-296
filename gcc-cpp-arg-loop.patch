@@ -1,0 +1,43 @@
+2000-09-15  Neil Booth  <NeilB@earthling.net>
+
+	* cpplex.c (push_macro_context): Set an argument's level after
+	calling parse_args.  We could loop infinitely otherwise.
+
+	* gcc.dg/cpp/macro2.c: New testcase.
+
+--- gcc/cpplex.c	2000/09/15 05:55:36	1.96
++++ gcc/cpplex.c	2000/09/15 17:38:10
+@@ -2972,7 +2972,6 @@ push_macro_context (pfile, token)
+       args->tokens = 0;
+       args->capacity = 0;
+       args->used = 0;
+-      args->level = pfile->cur_context;
+ 
+       prev_nme = prevent_macro_expansion (pfile);
+       pfile->args = args;
+@@ -2984,6 +2983,8 @@ push_macro_context (pfile, token)
+ 	  free_macro_args (args);
+ 	  return 1;
+ 	}
++      /* Set the level after the call to parse_args.  */
++      args->level = pfile->cur_context;
+     }
+ 
+   /* Now push its context.  */
+--- gcc/testsuite/gcc.dg/cpp/macro2.c	Tue May  5 13:32:27 1998
++++ gcc/testsuite/gcc.dg/cpp/macro2.c	Fri Sep 15 10:38:30 2000
+@@ -0,0 +1,14 @@
++/* Copyright (C) 2000 Free Software Foundation, Inc.  */
++
++/* { dg-do preprocess } */
++
++/* Tests the argument context get set at the lower level if we drop
++   contexts whilst parsing arguments.  This would enter an infinite
++   loop in is_macro_disabled previously.  */
++
++#define A Something
++#define B C
++#define C K(
++#define K(S) S  
++#define T B A )
++T				/* Expands to <Something>.  */

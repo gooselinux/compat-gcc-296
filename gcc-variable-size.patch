@@ -1,0 +1,36 @@
+2001-02-02  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-typeck.c (common_type): push and pop binding level around
+	calling common_type on function parameters.
+
+	* gcc.c-torture/compile/20010202-1.c: New test.
+
+--- gcc/c-typeck.c.jj	Wed Jan 31 12:51:45 2001
++++ gcc/c-typeck.c	Fri Feb  2 16:44:50 2001
+@@ -353,6 +353,9 @@ common_type (t1, t2)
+ 	/* If both args specify argument types, we must merge the two
+ 	   lists, argument by argument.  */
+ 
++	pushlevel (0);
++	declare_parm_level (1);
++
+ 	len = list_length (p1);
+ 	newargs = 0;
+ 
+@@ -411,6 +414,8 @@ common_type (t1, t2)
+ 	    TREE_VALUE (n) = common_type (TREE_VALUE (p1), TREE_VALUE (p2));
+ 	  parm_done: ;
+ 	  }
++
++	poplevel (0, 0, 0);
+ 
+ 	t1 = build_function_type (valtype, newargs);
+ 	/* ... falls through ...  */
+--- gcc/testsuite/gcc.c-torture/compile/20010202-1.c.jj	Fri Feb  2 16:48:43 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010202-1.c	Fri Feb  2 16:49:00 2001
+@@ -0,0 +1,5 @@
++int foo (int n, char m[1][n]);
++
++int foo (int n, char m[1][n])
++{
++}

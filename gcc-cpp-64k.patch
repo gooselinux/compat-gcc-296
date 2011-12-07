@@ -1,0 +1,17 @@
+2000-11-10  Jakub Jelinek  <jakub@redhat.com>
+
+	* cpplex.c (struct cpp_context): Make posn and count 32bit.
+
+--- gcc/cpplex.c.jj	Tue Nov  7 00:32:25 2000
++++ gcc/cpplex.c	Fri Nov 10 10:24:52 2000
+@@ -73,8 +73,8 @@ struct cpp_context
+ 
+   struct macro_args *args;	/* The arguments for a function-like
+ 				   macro.  NULL otherwise.  */
+-  unsigned short posn;		/* Current posn, index into u.  */
+-  unsigned short count;		/* No. of tokens in u.  */
++  unsigned int posn;		/* Current posn, index into u.  */
++  unsigned int count;		/* No. of tokens in u.  */
+   unsigned short level;
+   unsigned char flags;
+ };

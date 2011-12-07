@@ -1,0 +1,79 @@
+2000-12-12  Jakub Jelinek  <jakub@redhat.com>
+
+	* stor-layout.c (compute_record_mode): Try the old check
+	for the only field in union/structure first, if it fails,
+	try the new test for structures if mode_for_size_tree
+	would not return BLKmode.
+	* config/alpha/alpha.c (function_arg): Use $0 if record
+	has other fields than the one which gives mode to the whole
+	record.
+	* config/i386/i386.c (function_arg): Similarly for -mregparm.
+
+--- gcc/config/alpha/alpha.c.jj	Mon Dec 11 18:39:22 2000
++++ gcc/config/alpha/alpha.c	Tue Dec 12 14:53:42 2000
+@@ -3871,7 +3871,15 @@ function_arg (cum, mode, type, named)
+   else if (TARGET_FPREGS
+ 	   && (GET_MODE_CLASS (mode) == MODE_COMPLEX_FLOAT
+ 	       || GET_MODE_CLASS (mode) == MODE_FLOAT))
+-    basereg = 32 + 16;
++    {
++      basereg = 32 + 16;
++      /* For binary compatibility with gcc-2.96-60.  */
++      if (type && TREE_CODE (type) == RECORD_TYPE
++	  && TYPE_FIELDS (type)
++	  && (DECL_MODE (TYPE_FIELDS (type)) != mode
++	      || TREE_CHAIN (TYPE_FIELDS (type)) != 0))
++	basereg = 16;
++    }
+   else
+     basereg = 16;
+ 
+--- gcc/config/i386/i386.c.jj	Mon Dec 11 18:39:29 2000
++++ gcc/config/i386/i386.c	Tue Dec 12 15:02:12 2000
+@@ -956,8 +956,17 @@ function_arg (cum, mode, type, named)
+   int bytes =
+     (mode == BLKmode) ? int_size_in_bytes (type) : (int) GET_MODE_SIZE (mode);
+   int words = (bytes + UNITS_PER_WORD - 1) / UNITS_PER_WORD;
++  enum machine_mode passmode = mode;
+ 
+-  switch (mode)
++  /* For binary compatibility with gcc-2.96-54 */
++  if (type && TREE_CODE (type) == RECORD_TYPE
++      && GET_MODE_CLASS (mode) != MODE_INT
++      && TYPE_FIELDS (type)
++      && (DECL_MODE (TYPE_FIELDS (type)) != mode
++	  || TREE_CHAIN (TYPE_FIELDS (type)) != 0))
++    passmode = mode_for_size_tree (TYPE_SIZE (type), MODE_INT, 1);
++
++  switch (passmode)
+     {
+       /* For now, pass fp/complex values on the stack. */
+     default:
+--- gcc/stor-layout.c.jj	Mon Dec 11 18:39:37 2000
++++ gcc/stor-layout.c	Tue Dec 12 13:42:18 2000
+@@ -1073,7 +1073,12 @@ compute_record_mode (type)
+       /* If this field is the whole struct, remember its mode so
+ 	 that, say, we can put a double in a class into a DF
+ 	 register instead of forcing it to live in the stack.  */
+-      if (simple_cst_equal (TYPE_SIZE (type), DECL_SIZE (field)))
++      if (field == TYPE_FIELDS (type) && TREE_CHAIN (field) == 0)
++	mode = DECL_MODE (field);
++      else if (TREE_CODE (type) == RECORD_TYPE
++	       && simple_cst_equal (TYPE_SIZE (type), DECL_SIZE (field))
++	       && mode_for_size_tree (TYPE_SIZE (type), MODE_INT, 1)
++		  != BLKmode)
+ 	mode = DECL_MODE (field);
+ 
+ #ifdef STRUCT_FORCE_BLK
+@@ -1084,9 +1089,8 @@ compute_record_mode (type)
+ #endif /* STRUCT_FORCE_BLK  */
+     }
+ 
+-  /* If we only have one real field; use its mode.  This only applies to
+-     RECORD_TYPE.  This does not apply to unions.  */
+-  if (TREE_CODE (type) == RECORD_TYPE && mode != VOIDmode)
++  /* If we only have one real field; use its mode.  */
++  if (mode != VOIDmode)
+     TYPE_MODE (type) = mode;
+   else
+     TYPE_MODE (type) = mode_for_size_tree (TYPE_SIZE (type), MODE_INT, 1);

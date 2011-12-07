@@ -1,0 +1,40 @@
+2001-01-23  Jim Wilson  <wilson@redhat.com>
+
+	* config/ia64/ia64.md (bsp_value): Add explicit stop bit at start.
+	(flushrs): Add explicit stop bit at end.
+
+--- gcc/config/ia64/ia64.md.jj	Thu Feb  8 10:36:19 2001
++++ gcc/config/ia64/ia64.md	Mon Feb 26 06:12:53 2001
+@@ -3714,11 +3714,15 @@
+   "ldf.fill %0 = %1%P1"
+   [(set_attr "type" "M")])
+ 
++;; ??? The explicit stop is not ideal.  It would be better if
++;; rtx_needs_barrier took care of this, but this is something that can be
++;; fixed later.  This avoids an RSE DV.
++
+ (define_insn "bsp_value"
+   [(set (match_operand:DI 0 "register_operand" "=r")
+ 	(unspec:DI [(const_int 0)] 20))]
+   ""
+-  "mov %0 = ar.bsp"
++  ";;\;mov %0 = ar.bsp"
+   [(set_attr "type" "I")])
+ 
+ (define_insn "set_bsp"
+@@ -3729,10 +3733,14 @@
+   [(set_attr "type" "unknown")
+    (set_attr "predicable" "no")])
+ 
++;; ??? The explicit stop is not ideal.  It would be better if
++;; rtx_needs_barrier took care of this, but this is something that can be
++;; fixed later.  This avoids an RSE DV.
++
+ (define_insn "flushrs"
+   [(unspec [(const_int 0)] 21)]
+   ""
+-  ";;\;flushrs"
++  ";;\;flushrs\;;;"
+   [(set_attr "type" "M")])
+ 
+ ;; ::::::::::::::::::::

@@ -1,0 +1,284 @@
+2001-03-26  Mark Mitchell  <mark@codesourcery.com>
+
+	* c-decl.c (duplicate_decls): Don't copy DECL_FRAME_SIZE.
+	(pushdecl): Likewise.
+	* integrate.c (expand_inline_function): Don't check
+	DECL_FRAME_SIZE.
+	* print-tree.c (print_node): Don't print it.
+	* tree.h (DECL_FRAME_SIZE): Remove.
+	(tree_decl): Adjust accordingly.
+
+2001-03-26  Mark Mitchell  <mark@codesourcery.com>
+
+	* Makefile.in (optimize.o): Depend on flags.h.
+	(duplicate_decls): Copy DECL_NUM_STMTS, not DECL_FRAME_SIZE.
+	* cp-tree.h (DECL_NUM_STMTS): New macro.
+	* semantics.c (add_tree): Update DECL_NUM_STMTS.
+	* optimize.c: Include flags.h.
+	(struct inline_data): Improve documentation of FNS.  Add
+	FIRST_INLINED_FN and INLINED_STMTS.
+	(INSNS_PER_STMT): New macro.
+	(inlinable_function_p): Don't inline big functions.
+	(expand_call_inline): Keep track of how much inlining we've done.
+	(optimize_function): Set FIRST_INLINED_FN.
+
+Mon Mar 26 18:13:30 2001  Mark Mitchell  <mark@codesourcery.com>
+
+	* com.c (duplicate_decls): Don't copy DECL_FRAME_SIZE.
+
+2001-03-26  Mark Mitchell  <mark@codesourcery.com>
+
+	* parse.h (DECL_END_SOURCE_LINE): Don't rely on DECL_FRAME_SIZE.
+
+--- gcc/cp/Makefile.in.jj	Wed Jul 12 15:44:08 2000
++++ gcc/cp/Makefile.in	Tue Apr  3 13:03:30 2001
+@@ -310,7 +310,7 @@ semantics.o: semantics.c $(CXX_TREE_H) l
+ dump.o: dump.c $(CXX_TREE_H)
+ optimize.o: optimize.c $(CXX_TREE_H) \
+   $(srcdir)/../rtl.h $(srcdir)/../integrate.h ../insn-config.h \
+-  $(srcdir)/../input.h
++  $(srcdir)/../input.h $(srcdir)/../flags.h
+ mangle.o: mangle.c $(CXX_TREE_H) $(srcdir)/../toplev.h
+ 
+ #
+--- gcc/cp/decl.c.jj	Mon Mar 26 19:25:50 2001
++++ gcc/cp/decl.c	Tue Apr  3 12:40:56 2001
+@@ -3765,7 +3765,7 @@ duplicate_decls (newdecl, olddecl)
+ 	      DECL_RTL (newdecl) = DECL_RTL (olddecl);
+ 	    }
+ 	  else
+-	    DECL_FRAME_SIZE (newdecl) = DECL_FRAME_SIZE (olddecl);
++	    DECL_NUM_STMTS (newdecl) = DECL_NUM_STMTS (olddecl);
+ 
+ 	  DECL_RESULT (newdecl) = DECL_RESULT (olddecl);
+ 	  if ((DECL_SAVED_INSNS (newdecl) = DECL_SAVED_INSNS (olddecl)))
+--- gcc/cp/optimize.c.jj	Mon Mar 26 19:25:50 2001
++++ gcc/cp/optimize.c	Tue Apr  3 14:32:44 2001
+@@ -29,6 +29,7 @@ Software Foundation, 59 Temple Place - S
+ #include "integrate.h"
+ #include "varray.h"
+ #include "ggc.h"
++#include "flags.h"
+ 
+ /* To Do:
+ 
+@@ -49,8 +50,13 @@ typedef struct inline_data
+   /* A stack of the functions we are inlining.  For example, if we are
+      compiling `f', which calls `g', which calls `h', and we are
+      inlining the body of `h', the stack will contain, `h', followed
+-     by `g', followed by `f'.  */
++     by `g', followed by `f'.  The first few elements of the stack may
++     contain other functions that we know we should not recurse into,
++     even though they are not directly being inlined.  */
+   varray_type fns;
++  /* The index of the first element of FNS that really represents an
++     inlined function.  */
++  unsigned first_inlined_fn;
+   /* The label to jump to when a return statement is encountered.  If
+      this value is NULL, then return statements will simply be
+      remapped as return statements, rather than as jumps.  */
+@@ -65,6 +71,9 @@ typedef struct inline_data
+   varray_type target_exprs;
+   /* A list of the functions current function has inlined.  */
+   varray_type inlined_fns;
++  /* The approximate number of statements we have inlined in the
++     current call stack.  */
++  int inlined_stmts;
+ } inline_data;
+ 
+ /* Prototypes.  */
+@@ -81,6 +90,11 @@ static void remap_block PARAMS ((tree, t
+ static void copy_scope_stmt PARAMS ((tree *, int *, inline_data *));
+ static tree calls_setjmp_r PARAMS ((tree *, int *, void *));
+ 
++/* The approximate number of instructions per statement.  This number
++   need not be particularly accurate; it is used only to make
++   decisions about when a function is too big to inline.  */
++#define INSNS_PER_STMT (10)
++
+ /* Remap DECL during the copying of the BLOCK tree for the function.
+    DATA is really an `inline_data *'.  */
+ 
+@@ -578,6 +592,9 @@ inlinable_function_p (fn, id)
+   /* We can't inline varargs functions.  */
+   else if (varargs_function_p (fn))
+     ;
++  /* We can't inline functions that are too big.  */
++  else if (DECL_NUM_STMTS (fn) * INSNS_PER_STMT > inline_max_insns)
++    ;
+   /* All is well.  We can inline this function.  Traditionally, GCC
+      has refused to inline functions using alloca, or functions whose
+      values are returned in a PARALLEL, and a few other such obscure
+@@ -588,6 +605,13 @@ inlinable_function_p (fn, id)
+   /* Squirrel away the result so that we don't have to check again.  */
+   DECL_UNINLINABLE (fn) = !inlinable;
+ 
++  /* Even if this function is not itself too big to inline, it might
++     be that we've done so much inlining already that we don't want to
++     risk inlining any more.  */
++  if ((DECL_NUM_STMTS (fn) + id->inlined_stmts) * INSNS_PER_STMT
++      > inline_max_insns)
++    inlinable = 0;
++
+   /* We can inline a template instantiation only if it's fully
+      instantiated.  */
+   if (inlinable 
+@@ -821,10 +845,19 @@ expand_call_inline (tp, walk_subtrees, d
+      the equivalent inlined version either.  */
+   TREE_USED (*tp) = 1;
+ 
++  /* Our function now has more statements than it did before.  */
++  DECL_NUM_STMTS (VARRAY_TREE (id->fns, 0)) += DECL_NUM_STMTS (fn);
++  id->inlined_stmts += DECL_NUM_STMTS (fn);
++
+   /* Recurse into the body of the just inlined function.  */
+   expand_calls_inline (inlined_body, id);
+   VARRAY_POP (id->fns);
+ 
++  /* If we've returned to the top level, clear out the record of how
++     much inlining has been done.  */
++  if (VARRAY_ACTIVE_SIZE (id->fns) == id->first_inlined_fn)
++    id->inlined_stmts = 0;
++
+   /* Don't walk into subtrees.  We've already handled them above.  */
+   *walk_subtrees = 0;
+ 
+@@ -894,6 +927,10 @@ optimize_function (fn)
+ 
+       /* Create the list of functions this call will inline.  */
+       VARRAY_TREE_INIT (id.inlined_fns, 32, "inlined_fns");
++
++      /* Keep track of the low-water mark, i.e., the point where
++	 the first real inlining is represented in ID.FNS.  */
++      id.first_inlined_fn = VARRAY_ACTIVE_SIZE (id.fns);
+ 
+       /* Replace all calls to inline functions with the bodies of those
+ 	 functions.  */
+--- gcc/cp/cp-tree.h.jj	Mon Mar 26 19:25:51 2001
++++ gcc/cp/cp-tree.h	Tue Apr  3 12:48:05 2001
+@@ -2470,6 +2470,13 @@ struct lang_decl
+ #define DECL_SAVED_FUNCTION_DATA(NODE) \
+   (DECL_LANG_SPECIFIC (FUNCTION_DECL_CHECK (NODE))->u.saved_language_function)
+ 
++/* In a FUNCTION_DECL for which DECL_BUILT_IN does not hold, this is
++   the approximate number of statements in this function.  There is
++   no need for this number to be exact; it is only used in various
++   heuristics regarding optimization.  */
++#define DECL_NUM_STMTS(NODE) \
++  (FUNCTION_DECL_CHECK (NODE)->decl.u1.i)
++
+ #define NEW_EXPR_USE_GLOBAL(NODE)	TREE_LANG_FLAG_0 (NODE)
+ #define DELETE_EXPR_USE_GLOBAL(NODE)	TREE_LANG_FLAG_0 (NODE)
+ #define DELETE_EXPR_USE_VEC(NODE)	TREE_LANG_FLAG_1 (NODE)
+--- gcc/cp/semantics.c.jj	Mon Mar 26 19:25:34 2001
++++ gcc/cp/semantics.c	Tue Apr  3 12:50:06 2001
+@@ -181,6 +181,9 @@ add_tree (t)
+   /* When we expand a statement-tree, we must know whether or not the
+      statements are full-expresions.  We record that fact here.  */
+   STMT_IS_FULL_EXPR_P (last_tree) = stmts_are_full_exprs_p ();
++  /* Keep track of the number of statements in this function.  */
++  if (current_function_decl)
++    ++DECL_NUM_STMTS (current_function_decl);
+ }
+ 
+ /* Finish a goto-statement.  */
+--- gcc/f/com.c.jj	Mon Mar 26 19:25:49 2001
++++ gcc/f/com.c	Tue Apr  3 12:40:57 2001
+@@ -13914,8 +13914,6 @@ duplicate_decls (tree newdecl, tree oldd
+ 	  DECL_BUILT_IN_CLASS (newdecl) = DECL_BUILT_IN_CLASS (olddecl);
+ 	  DECL_FUNCTION_CODE (newdecl) = DECL_FUNCTION_CODE (olddecl);
+ 	}
+-      else
+-	DECL_FRAME_SIZE (newdecl) = DECL_FRAME_SIZE (olddecl);
+ 
+       DECL_RESULT (newdecl) = DECL_RESULT (olddecl);
+       DECL_INITIAL (newdecl) = DECL_INITIAL (olddecl);
+--- gcc/java/parse.h.jj	Mon Mar 26 19:25:23 2001
++++ gcc/java/parse.h	Tue Apr  3 12:40:57 2001
+@@ -721,7 +721,7 @@ typedef struct _jdeplist {
+ #define CURRENT_OSB(C) (C)->osb_number [(C)->osb_depth]
+ 
+ /* Macro for the xreferencer */
+-#define DECL_END_SOURCE_LINE(DECL)       DECL_FRAME_SIZE (DECL)
++#define DECL_END_SOURCE_LINE(DECL)       (DECL_CHECK (DECL)->decl.u1.i)
+ #define DECL_INHERITED_SOURCE_LINE(DECL) (DECL_CHECK (DECL)->decl.u2.i)
+      
+ /* Parser context data structure. */
+--- gcc/c-decl.c.jj	Mon Mar 26 19:25:45 2001
++++ gcc/c-decl.c	Tue Apr  3 13:14:51 2001
+@@ -1991,9 +1991,6 @@ duplicate_decls (newdecl, olddecl, diffe
+ 	      DECL_FUNCTION_CODE (newdecl) = DECL_FUNCTION_CODE (olddecl);
+ 	    }
+ 	}
+-      /* Also preserve various other info from the definition.  */
+-      else if (! new_is_definition)
+-	DECL_FRAME_SIZE (newdecl) = DECL_FRAME_SIZE (olddecl);
+       if (! new_is_definition)
+ 	{
+ 	  DECL_RESULT (newdecl) = DECL_RESULT (olddecl);
+@@ -2368,7 +2365,6 @@ pushdecl (x)
+ 		      DECL_INITIAL (x) = (current_function_decl == oldglobal
+ 					  ? 0 : DECL_INITIAL (oldglobal));
+ 		      DECL_SAVED_INSNS (x) = DECL_SAVED_INSNS (oldglobal);
+-		      DECL_FRAME_SIZE (x) = DECL_FRAME_SIZE (oldglobal);
+ 		      DECL_ARGUMENTS (x) = DECL_ARGUMENTS (oldglobal);
+ 		      DECL_RESULT (x) = DECL_RESULT (oldglobal);
+ 		      TREE_ASM_WRITTEN (x) = TREE_ASM_WRITTEN (oldglobal);
+--- gcc/integrate.c.jj	Mon Mar 26 19:25:43 2001
++++ gcc/integrate.c	Tue Apr  3 12:40:40 2001
+@@ -901,9 +901,6 @@ expand_inline_function (fndecl, parms, t
+ 	     incoming arg rtx values are expanded now so that we can be
+ 	     sure we have enough slots in the const equiv map since the
+ 	     store_expr call can easily blow the size estimate.  */
+-	  if (DECL_FRAME_SIZE (fndecl) != 0)
+-	    copy_rtx_and_substitute (virtual_stack_vars_rtx, map, 0);
+-
+ 	  if (DECL_SAVED_INSNS (fndecl)->args_size != 0)
+ 	    copy_rtx_and_substitute (virtual_incoming_args_rtx, map, 0);
+ 	}
+--- gcc/print-tree.c.jj	Tue Jun 13 07:18:25 2000
++++ gcc/print-tree.c	Tue Apr  3 12:40:40 2001
+@@ -414,11 +414,6 @@ print_node (file, prefix, node, indent)
+ 	  if (TREE_CODE (node) == FIELD_DECL)
+ 	    fprintf (file, " offset_align %d", DECL_OFFSET_ALIGN (node));
+ 	}
+-      else if (DECL_INLINE (node))
+-	{
+-	  fprintf (file, " frame_size ");
+-	  fprintf (file, HOST_WIDE_INT_PRINT_DEC, DECL_FRAME_SIZE (node));
+-	}
+       else if (DECL_BUILT_IN (node))
+ 	fprintf (file, " built-in %s:%s",
+ 		 built_in_class_names[(int) DECL_BUILT_IN_CLASS (node)],
+--- gcc/tree.h.jj	Mon Mar 26 19:25:46 2001
++++ gcc/tree.h	Tue Apr  3 12:40:56 2001
+@@ -1336,9 +1336,6 @@ struct tree_type
+ #define DECL_INCOMING_RTL(NODE) (PARM_DECL_CHECK (NODE)->decl.u2.r)
+ /* For FUNCTION_DECL, if it is inline, holds the saved insn chain.  */
+ #define DECL_SAVED_INSNS(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.u2.f)
+-/* For FUNCTION_DECL, if it is inline,
+-   holds the size of the stack frame, as an integer.  */
+-#define DECL_FRAME_SIZE(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.u1.i)
+ /* For FUNCTION_DECL, if it is built-in,
+    this identifies which built-in operation it is.  */
+ #define DECL_FUNCTION_CODE(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.u1.f)
+@@ -1628,12 +1625,15 @@ struct tree_decl
+   unsigned lang_flag_6 : 1;
+   unsigned lang_flag_7 : 1;
+ 
+-  /* For a FUNCTION_DECL, if inline, this is the size of frame needed.
+-     If built-in, this is the code for which built-in function.
+-     For other kinds of decls, this is DECL_ALIGN and DECL_OFFSET_ALIGN.  */
+   union {
+-    HOST_WIDE_INT i;
++    /* In a FUNCTION_DECL for which DECL_BUILT_IN holds, this is
++       DECL_FUNCTION_CODE.  */
+     enum built_in_function f;
++    /* In a FUNCITON_DECL for which DECL_BUILT_IN does not hold, this
++       is used by language-dependent code.  */
++    HOST_WIDE_INT i;
++    /* DECL_ALIGN and DECL_OFFSET_ALIGN.  (These are not used for
++       FUNCTION_DECLs).  */
+     struct {unsigned int align : 24; unsigned int off_align : 8;} a;
+   } u1;
+ 

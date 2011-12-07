@@ -1,0 +1,17 @@
+2000-11-16  Jakub Jelinek  <jakub@redhat.com>
+
+	* cpplex.c (cpp_scan_buffer): Output #line directive even
+	for empty include files.
+
+--- gcc/cpplex.c.jj	Fri Nov 10 10:24:52 2000
++++ gcc/cpplex.c	Thu Nov 16 16:14:40 2000
+@@ -436,6 +436,9 @@ cpp_scan_buffer (pfile, print)
+       token = _cpp_get_token (pfile);
+       if (token->type == CPP_EOF)
+ 	{
++	  if (pfile->include_depth > print->last_id)
++	    cpp_output_tokens (pfile, print, 1);
++
+ 	  cpp_pop_buffer (pfile);
+ 
+ 	  if (CPP_BUFFER (pfile))

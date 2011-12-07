@@ -1,0 +1,55 @@
+2001-03-16  Jim Wilson  <wilson@redhat.com>
+
+	* config/ia64/ia64.c (ia64_compute_frame_size): If reg_fp is zero,
+	then set it to LOC_REG (79) instead of aborting.
+
+2001-03-13  Jim Wilson  <wilson@redhat.com>
+
+	* config/ia64/ia64.c (find_gr_spill): Subtract frame_pointer_needed
+	from 80 in try_locals code.
+	(ia64_expand_prologue): Add comment pointing to find_gr_spill change.
+
+--- gcc/config/ia64/ia64.c.jj	2001/03/01 14:25:30	1.78,1.81
++++ gcc/config/ia64/ia64.c	2001/03/14 02:29:02	1.79,1.82
+@@ -1214,7 +1214,10 @@ find_gr_spill (try_locals)
+   if (try_locals)
+     {
+       regno = current_frame_info.n_local_regs;
+-      if (regno < 80)
++      /* If there is a frame pointer, then we can't use loc79, because
++	 that is HARD_FRAME_POINTER_REGNUM.  In particular, see the
++	 reg_name switching code in ia64_expand_prologue.  */
++      if (regno < (80 - frame_pointer_needed))
+ 	{
+ 	  current_frame_info.n_local_regs = regno + 1;
+ 	  return LOC_REG (0) + regno;
+@@ -1390,10 +1390,15 @@ ia64_compute_frame_size (size)
+   if (frame_pointer_needed)
+     {
+       current_frame_info.reg_fp = find_gr_spill (1);
+-      /* We should have gotten at least LOC79, since that's what
+-	 HARD_FRAME_POINTER_REGNUM is.  */
++      /* If we did not get a register, then we take LOC79.  This is guaranteed
++	 to be free, even if regs_ever_live is already set, because this is
++	 HARD_FRAME_POINTER_REGNUM.  This requires incrementing n_local_regs,
++	 as we don't count loc79 above.  */
+       if (current_frame_info.reg_fp == 0)
+-	abort ();
++	{
++	  current_frame_info.reg_fp = LOC_REG (79);
++	  current_frame_info.n_local_regs++;
++	}
+     }
+ 
+   if (! current_function_is_leaf)
+@@ -1874,6 +1882,10 @@ ia64_expand_prologue ()
+   /* Set the frame pointer register name.  The regnum is logically loc79,
+      but of course we'll not have allocated that many locals.  Rather than
+      worrying about renumbering the existing rtxs, we adjust the name.  */
++  /* ??? This code means that we can never use one local register when
++     there is a frame pointer.  loc79 gets wasted in this case, as it is
++     renamed to a register that will never be used.  See also the try_locals
++     code in find_gr_spill.  */
+   if (current_frame_info.reg_fp)
+     {
+       const char *tmp = reg_names[HARD_FRAME_POINTER_REGNUM];

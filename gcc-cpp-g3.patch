@@ -1,0 +1,28 @@
+2000-12-21  Jakub Jelinek  <jakub@redhat.com>
+
+	* cppmacro.c (_cpp_dump_definition): If nothing has been output yet
+	and no_line_commands is false, output it before dumped definitions.
+
+--- gcc/cppmacro.c.jj	Tue Dec 19 09:21:54 2000
++++ gcc/cppmacro.c	Thu Dec 21 12:56:21 2000
+@@ -562,6 +562,20 @@ _cpp_dump_definition (pfile, hp)
+      cpp_reader *pfile;
+      cpp_hashnode *hp;
+ {
++  if (! pfile->done_initializing
++      && ! CPP_WRITTEN (pfile)
++      && ! CPP_OPTION (pfile, no_line_commands))
++    {
++      size_t len = strlen (CPP_OPTION (pfile, in_fname));
++
++      /* If outputing line command, make sure the first line
++	 output is the line command with the input filename.  */
++      CPP_RESERVE (pfile, sizeof "# 0 \"\"\n" + len);
++      CPP_PUTS_Q (pfile, "# 0 \"", sizeof "# 0 \"" - 1);
++      CPP_PUTS_Q (pfile, CPP_OPTION (pfile, in_fname), len);
++      CPP_PUTS_Q (pfile, "\"\n", sizeof "\"\n" - 1);
++    }
++
+   CPP_RESERVE (pfile, hp->length + sizeof "#define ");
+   CPP_PUTS_Q (pfile, "#define ", sizeof "#define " - 1);
+   CPP_PUTS_Q (pfile, hp->name, hp->length);

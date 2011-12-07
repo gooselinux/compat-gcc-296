@@ -1,0 +1,61 @@
+2000-10-19  Jim Wilson  <wilson@cygnus.com>
+
+	* c-decl.c (start_decl): Check for error_mark_node type before using
+	COMPLETE_TYPE_P.
+	(finish_decl): Likewise.  Don't give an error if decl type is
+	already error_mark_node.
+
+2000-10-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.dg/noncompile/init-3.c: New test.
+
+diff -up ./gcc/c-decl.c.segv3 ./gcc/c-decl.c
+--- ./gcc/c-decl.c.segv3	2008-07-15 11:03:47.000000000 -0400
++++ ./gcc/c-decl.c	2008-07-15 11:07:41.000000000 -0400
+@@ -3465,7 +3465,12 @@ start_decl (declarator, declspecs, initi
+       default:
+ 	/* Don't allow initializations for incomplete types
+ 	   except for arrays which might be completed by the initialization.  */
+-	if (COMPLETE_TYPE_P (TREE_TYPE (decl)))
++
++	/* This can happen if the array size is an undefined macro.  We already
++	   gave a warning, so we don't need another one.  */
++	if (TREE_TYPE (decl) == error_mark_node)
++	  initialized = 0;
++	else if (COMPLETE_TYPE_P (TREE_TYPE (decl)))
+ 	  {
+ 	    /* A complete type is ok if size is fixed.  */
+ 
+@@ -3541,7 +3546,8 @@ start_decl (declarator, declspecs, initi
+ 	 (which may or may not happen).  */
+       && DECL_RTL (tem) == 0)
+     {
+-      if (COMPLETE_TYPE_P (TREE_TYPE (tem)))
++      if (TREE_TYPE (tem) != error_mark_node
++         && COMPLETE_TYPE_P (TREE_TYPE (decl)))
+ 	expand_decl (tem);
+       else if (TREE_CODE (TREE_TYPE (tem)) == ARRAY_TYPE
+ 	       && DECL_INITIAL (tem) != 0)
+@@ -3644,10 +3650,13 @@ finish_decl (decl, init, asmspec_tree)
+ 
+   if (TREE_CODE (decl) == VAR_DECL)
+     {
+-      if (DECL_SIZE (decl) == 0 && COMPLETE_TYPE_P (TREE_TYPE (decl)))
++      if (DECL_SIZE (decl) == 0 && TREE_TYPE (decl) != error_mark_node
++	  && COMPLETE_TYPE_P (TREE_TYPE (decl)))
+ 	layout_decl (decl, 0);
+ 
+       if (DECL_SIZE (decl) == 0
++	  /* Don't give an error if we already gave one earlier.  */
++	  && TREE_TYPE (decl) != error_mark_node
+ 	  && (TREE_STATIC (decl)
+ 	      ?
+ 		/* A static variable with an incomplete type
+diff -up /dev/null ./gcc/testsuite/gcc.dg/noncompile/init-3.c
+--- /dev/null	2008-07-14 09:17:49.235004637 -0400
++++ ./gcc/testsuite/gcc.dg/noncompile/init-3.c	2008-07-15 11:03:47.000000000 -0400
+@@ -0,0 +1,4 @@
++void die(void)
++{
++  char foo[BAR] = "1234"; /* { dg-error "undeclared|function|incomplete type" } */
++}

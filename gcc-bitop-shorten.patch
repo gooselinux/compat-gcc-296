@@ -1,0 +1,104 @@
+2002-02-17  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c/3444:
+	* c-typeck.c (build_binary_op) [BIT_XOR_EXPR]: Remove explicit
+	shortening.
+
+	* typeck.c (build_binary_op) [BIT_XOR_EXPR]: Remove explicit
+	shortening.
+
+	* gcc.c-torture/execute/20020216-1.c: New test.
+
+--- gcc/c-typeck.c.jj	2002/02/12 22:26:11	1.177
++++ gcc/c-typeck.c	2002/02/17 20:47:49	1.178
+@@ -2060,29 +2060,6 @@ build_binary_op (code, orig_op0, orig_op
+     case BIT_XOR_EXPR:
+       if (code0 == INTEGER_TYPE && code1 == INTEGER_TYPE)
+ 	shorten = -1;
+-      /* If one operand is a constant, and the other is a short type
+-	 that has been converted to an int,
+-	 really do the work in the short type and then convert the
+-	 result to int.  If we are lucky, the constant will be 0 or 1
+-	 in the short type, making the entire operation go away.  */
+-      if (TREE_CODE (op0) == INTEGER_CST
+-	  && TREE_CODE (op1) == NOP_EXPR
+-	  && TYPE_PRECISION (type1) > TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (op1, 0)))
+-	  && TREE_UNSIGNED (TREE_TYPE (TREE_OPERAND (op1, 0))))
+-	{
+-	  final_type = result_type;
+-	  op1 = TREE_OPERAND (op1, 0);
+-	  result_type = TREE_TYPE (op1);
+-	}
+-      if (TREE_CODE (op1) == INTEGER_CST
+-	  && TREE_CODE (op0) == NOP_EXPR
+-	  && TYPE_PRECISION (type0) > TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (op0, 0)))
+-	  && TREE_UNSIGNED (TREE_TYPE (TREE_OPERAND (op0, 0))))
+-	{
+-	  final_type = result_type;
+-	  op0 = TREE_OPERAND (op0, 0);
+-	  result_type = TREE_TYPE (op0);
+-	}
+       break;
+ 
+     case TRUNC_MOD_EXPR:
+--- gcc/cp/typeck.c.jj	2002/02/07 20:51:15	1.386
++++ gcc/cp/typeck.c	2002/02/17 20:47:51	1.387
+@@ -3514,31 +3514,6 @@ build_binary_op (code, orig_op0, orig_op
+     case BIT_XOR_EXPR:
+       if (code0 == INTEGER_TYPE && code1 == INTEGER_TYPE)
+ 	shorten = -1;
+-      /* If one operand is a constant, and the other is a short type
+-	 that has been converted to an int,
+-	 really do the work in the short type and then convert the
+-	 result to int.  If we are lucky, the constant will be 0 or 1
+-	 in the short type, making the entire operation go away.  */
+-      if (TREE_CODE (op0) == INTEGER_CST
+-	  && TREE_CODE (op1) == NOP_EXPR
+-	  && (TYPE_PRECISION (type1)
+-	      > TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (op1, 0))))
+-	  && TREE_UNSIGNED (TREE_TYPE (TREE_OPERAND (op1, 0))))
+-	{
+-	  final_type = result_type;
+-	  op1 = TREE_OPERAND (op1, 0);
+-	  result_type = TREE_TYPE (op1);
+-	}
+-      if (TREE_CODE (op1) == INTEGER_CST
+-	  && TREE_CODE (op0) == NOP_EXPR
+-	  && (TYPE_PRECISION (type0)
+-	      > TYPE_PRECISION (TREE_TYPE (TREE_OPERAND (op0, 0))))
+-	  && TREE_UNSIGNED (TREE_TYPE (TREE_OPERAND (op0, 0))))
+-	{
+-	  final_type = result_type;
+-	  op0 = TREE_OPERAND (op0, 0);
+-	  result_type = TREE_TYPE (op0);
+-	}
+       break;
+ 
+     case TRUNC_MOD_EXPR:
+--- gcc/testsuite/gcc.c-torture/execute/20020216-1.c.jj	Sat Feb 16 22:54:16 2002
++++ gcc/testsuite/gcc.c-torture/execute/20020216-1.c	Sat Feb 16 23:02:00 2002
+@@ -0,0 +1,24 @@
++/* PR c/3444
++   This used to fail because bitwise xor was improperly computed in char type
++   and sign extended to int type.  */
++
++extern void abort ();
++extern void exit (int);
++
++signed char c = (signed char) 0xffffffff;
++
++int foo (void)
++{
++  return (unsigned short) c ^ (signed char) 0x99999999;
++}
++
++int main (void)
++{
++  if ((unsigned char) -1 != 0xff
++      || sizeof (short) != 2
++      || sizeof (int) != 4)
++    exit (0);
++  if (foo () != (int) 0xffff0066)
++    abort ();
++  exit (0);
++}

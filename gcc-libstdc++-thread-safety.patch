@@ -1,0 +1,64 @@
+2003-12-04  Jakub Jelinek  <jakub@redhat.com>
+
+	* std/bastring.h (Rep::grab): Add x86 atomic version.
+	(Rep::release): Add __i386__ atomic version.
+	Optimize __i486__+ atomic version.
+
+--- libstdc++/std/bastring.h.jj	Thu Dec  4 09:53:31 2003
++++ libstdc++/std/bastring.h	Thu Dec  4 10:16:33 2003
+@@ -72,24 +72,38 @@ private:
+ 
+     charT* data () { return reinterpret_cast<charT *>(this + 1); }
+     charT& operator[] (size_t s) { return data () [s]; }
+-    charT* grab () { if (selfish) return clone (); ++ref; return data (); }
+ #if defined __i486__ || defined __i586__ || defined __i686__
++    charT* grab ()
++      {
++	if (selfish) return clone ();
++	asm ("lock; addl $1, %0" : "+m" (ref));
++	return data ();
++      }
+     void release ()
+       {
+ 	size_t __val;
+-	// This opcode exists as a .byte instead of as a mnemonic for the
+-	// benefit of SCO OpenServer 5.  The system assembler (which is 
+-	// essentially required on this target) can't assemble xaddl in 
+-	//COFF mode.
+-	asm (".byte 0xf0, 0x0f, 0xc1, 0x02" // lock; xaddl %eax, (%edx)
+-	    : "=a" (__val)
+-	    : "0" (-1), "m" (ref), "d" (&ref)
+-	    : "memory");
++	asm ("lock; xaddl %0, %1" : "=r" (__val), "+m" (ref) : "0" (-1));
+ 
+ 	if (__val == 1)
+ 	  delete this;
+       }
++#elif defined __i386__
++    charT* grab ()
++      {
++	if (selfish) return clone ();
++	asm ("lock; addl $1, %0" : "+m" (ref));
++	return data ();
++      }
++    void release ()
++      {
++ 	unsigned char __val;
++	asm ("lock; subl $1, %1; sete %b0" : "=q" (__val), "+m" (ref));
++  
++  	if (__val == 1)
++  	  delete this;
++        }
+ #elif defined __sparc_v9__
++    charT* grab () { if (selfish) return clone (); ++ref; return data (); }
+     void release ()
+       {
+ 	size_t __newval, __oldval = ref;
+@@ -111,6 +125,7 @@ private:
+ 	  delete this;
+       }
+ #else
++    charT* grab () { if (selfish) return clone (); ++ref; return data (); }
+     void release () { if (--ref == 0) delete this; }
+ #endif
+ 

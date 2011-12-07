@@ -1,0 +1,30 @@
+2001-07-25  Jakub Jelinek  <jakub@redhat.com>
+
+	* lex.c (real_yylex): Don't crash on :=.
+
+	* g++.old-deja/g++.other/crash60.C: New test.
+
+--- gcc/cp/lex.c.jj	Tue Jul 24 20:41:16 2001
++++ gcc/cp/lex.c	Wed Jul 25 16:00:52 2001
+@@ -4564,7 +4564,10 @@ real_yylex ()
+ 	      case '=':
+ 		value = EQCOMPARE; yylval.code = EQ_EXPR; goto done;
+ 	      }
+-	    value = ASSIGN; goto done;
++	    if (c != ':')
++	      {
++		value = ASSIGN; goto done;
++	      }
+ 	  }
+ 	else if (c == c1)
+ 	  switch (c)
+--- gcc/testsuite/g++.old-deja/g++.other/crash60.C.jj	Wed Jul 25 16:06:37 2001
++++ gcc/testsuite/g++.old-deja/g++.other/crash60.C	Wed Jul 25 16:07:09 2001
+@@ -0,0 +1,7 @@
++// Build don't link:
++
++void foo ()
++{
++  int e;
++  e := e;	// ERROR - parse error
++}

@@ -1,0 +1,60 @@
+2000-11-13  Jakub Jelinek  <jakub@redhat.com>
+
+	* typeck.c (get_delta_difference): Fix typos.
+
+	* g++.old-deja/g++.other/conv7.C: New test.
+
+--- gcc/cp/typeck.c.jj	Mon Nov 13 18:33:19 2000
++++ gcc/cp/typeck.c	Mon Nov 13 18:34:57 2000
+@@ -5901,7 +5901,7 @@ get_delta_difference (from, to, force)
+   if (to == from)
+     return delta;
+ 
+-  /* Should get_base_distance here, so we can check if any thing along
++  /* Should get_base_distance here, so we can check if anything along
+      the path is virtual, and we need to make sure we stay inside the
+      real binfos when going through virtual bases.  Maybe we should
+      replace virtual bases with BINFO_FOR_VBASE ... (mrs) */
+@@ -5939,7 +5939,7 @@ get_delta_difference (from, to, force)
+     {
+       if (force)
+ 	{
+-	  cp_warning ("pointer to member cast from virtual base `%T' will only wokr if you are very careful", BINFO_TYPE (binfo));
++	  cp_warning ("pointer to member cast from virtual base `%T' will only work if you are very careful", BINFO_TYPE (binfo));
+ 	}
+       else
+ 	cp_error ("pointer to member conversion from virtual base `%T'",
+--- gcc/testsuite/g++.old-deja/g++.other/conv7.C.jj	Mon Nov 13 18:48:23 2000
++++ gcc/testsuite/g++.old-deja/g++.other/conv7.C	Mon Nov 13 18:38:37 2000
+@@ -0,0 +1,31 @@
++// Build don't link:
++// Origin: Jakub Jelinek <jakub@redhat.com>
++
++class bar
++{
++public:
++    bar();
++    virtual ~bar();
++    static void a();
++};
++
++class baz : public bar
++{
++};
++
++class foo : virtual public baz
++{
++public:
++    static void a();
++    void b();
++};
++
++typedef void (bar::*T)();
++T d;
++
++void foo::a()
++{
++    typedef void(foo::*t)();
++    t c = & foo::b;
++    d = (T) c;			// WARNING - pointer to member cast
++}

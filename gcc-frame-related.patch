@@ -1,0 +1,67 @@
+2000-12-27  Alexandre Oliva  <aoliva@redhat.com>
+
+	* rtl.c (copy_most_rtx, shallow_copy_rtx): Copy frame_related
+	flag.
+
+2001-01-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20010118-1.c: New test.
+
+--- gcc/rtl.c.jj	Thu Jan  4 18:08:11 2001
++++ gcc/rtl.c	Thu Jan 18 19:37:24 2001
+@@ -477,6 +477,7 @@ copy_most_rtx (orig, may_share)
+   copy->volatil = orig->volatil;
+   copy->unchanging = orig->unchanging;
+   copy->integrated = orig->integrated;
++  copy->frame_related = orig->frame_related;
+ 
+   format_ptr = GET_RTX_FORMAT (GET_CODE (copy));
+ 
+@@ -550,6 +551,7 @@ shallow_copy_rtx (orig)
+   copy->volatil = orig->volatil;
+   copy->unchanging = orig->unchanging;
+   copy->integrated = orig->integrated;
++  copy->frame_related = orig->frame_related;
+ 
+   for (i = 0; i < GET_RTX_LENGTH (code); i++)
+     copy->fld[i] = orig->fld[i];
+--- gcc/testsuite/gcc.c-torture/execute/20010118-1.c.jj	Thu Jan 18 20:06:23 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010118-1.c	Sun Jan  7 11:58:09 2001
+@@ -0,0 +1,37 @@
++typedef struct {
++  int a, b, c, d, e, f;
++} A;
++
++void foo (A *v, int w, int x, int *y, int *z)
++{
++}
++
++void
++bar (A *v, int x, int y, int w, int h)
++{
++  if (v->a != x || v->b != y) {
++    int oldw = w;
++    int oldh = h;
++    int e = v->e;
++    int f = v->f;
++    int dx, dy;
++    foo(v, 0, 0, &w, &h);
++    dx = (oldw - w) * (double) e/2.0;
++    dy = (oldh - h) * (double) f/2.0;
++    x += dx;
++    y += dy;
++    v->a = x;
++    v->b = y;
++    v->c = w;
++    v->d = h;
++  }
++}
++
++int main ()
++{
++  A w = { 100, 110, 20, 30, -1, -1 };
++  bar (&w,400,420,50,70);
++  if (w.d != 70)
++    abort();
++  exit(0);
++}

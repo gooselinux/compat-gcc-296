@@ -1,0 +1,105 @@
+2001-02-13  Jakub Jelinek  <jakub@redhat.com>
+
+	* stor-layout.c (is_pending_size, put_pending_size): New functions.
+	(variable_size): Call put_pending_size.
+	* tree.h (is_pending_size, put_pending_size): Add prototypes.
+	* fold-const.c (extract_muldiv): If SAVE_EXPR is on the pending
+	sizes list, put newly created SAVE_EXPR there as well.
+
+	* gcc.c-torture/execute/20010209-1.c: New test.
+
+--- gcc/stor-layout.c.jj	Fri Feb  9 01:35:10 2001
++++ gcc/stor-layout.c	Tue Feb 13 20:02:32 2001
+@@ -80,6 +80,30 @@ get_pending_sizes ()
+   return chain;
+ }
+ 
++/* Return non-zero if EXPR is present on the pending sizes list.  */
++
++int
++is_pending_size (expr)
++     tree expr;
++{
++  tree t;
++
++  for (t = pending_sizes; t; t = TREE_CHAIN (t))
++    if (TREE_VALUE (t) == expr)
++      return 1;
++  return 0;
++}
++
++/* Add EXPR to the pending sizes list.  */
++
++void
++put_pending_size (expr)
++     tree expr;
++{
++  if (TREE_CODE (expr) == SAVE_EXPR)
++    pending_sizes = tree_cons (NULL_TREE, expr, pending_sizes);
++}
++
+ /* Put a chain of objects into the pending sizes list, which must be
+    empty.  */
+ 
+@@ -140,7 +164,7 @@ variable_size (size)
+        that determine sizes for variable size objects.  */
+     ;
+   else
+-    pending_sizes = tree_cons (NULL_TREE, size, pending_sizes);
++    put_pending_size (size);
+ 
+   return size;
+ }
+--- gcc/tree.h.jj	Fri Feb  9 01:35:07 2001
++++ gcc/tree.h	Tue Feb 13 19:34:13 2001
+@@ -2127,6 +2127,8 @@ extern tree size_int_type_wide		PARAMS (
+ extern tree round_up			PARAMS ((tree, int));
+ extern tree round_down			PARAMS ((tree, int));
+ extern tree get_pending_sizes		PARAMS ((void));
++extern int is_pending_size		PARAMS ((tree));
++extern void put_pending_size		PARAMS ((tree));
+ extern void put_pending_sizes		PARAMS ((tree));
+ 
+ /* Type for sizes of data-type.  */
+--- gcc/fold-const.c.jj	Fri Feb  9 01:35:08 2001
++++ gcc/fold-const.c	Tue Feb 13 19:55:42 2001
+@@ -4454,7 +4454,14 @@ extract_muldiv (t, c, code, wide_type)
+       if (SAVE_EXPR_RTL (t) == 0 && ! TREE_SIDE_EFFECTS (TREE_OPERAND (t, 0))
+ 	  && 0 != (t1 = extract_muldiv (TREE_OPERAND (t, 0), c, code,
+ 					wide_type)))
+-	return save_expr (t1);
++	{
++	  t1 = save_expr (t1);
++	  if (SAVE_EXPR_PERSISTENT_P (t) && TREE_CODE (t1) == SAVE_EXPR)
++	    SAVE_EXPR_PERSISTENT_P (t1) = 1;
++	  if (is_pending_size (t))
++	    put_pending_size (t1);
++	  return t1;
++	}
+       break;
+ 
+     case LSHIFT_EXPR:  case RSHIFT_EXPR:
+--- gcc/testsuite/gcc.c-torture/execute/20010209-1.c.jj	Fri Feb  9 01:13:27 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010209-1.c	Fri Feb  9 01:13:18 2001
+@@ -0,0 +1,21 @@
++int b;
++int foo (void)
++{
++  int x[b];
++  int bar (int t[b])
++  {
++    int i;
++    for (i = 0; i < b; i++)
++      t[i] = i + (i > 0 ? t[i-1] : 0);
++    return t[b-1];
++  }
++  return bar (x);
++}
++
++int main ()
++{
++  b = 6;
++  if (foo () != 15)
++    abort ();
++  exit (0);
++}

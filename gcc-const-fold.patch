@@ -1,0 +1,100 @@
+2000-11-15  Bernd Schmidt  <bernds@redhat.com>
+
+	* c-typeck.c (build_binary_op): Make sure TREE_CONSTANT gets set for
+	constant trees.
+	(pointer_int_sum): Likewise.
+	(pointer_diff): Likewise.
+	* fold-const.c (split_tree): Try to split IN before testing it for
+	constness.
+
+	* typeck.c (build_binary_op): Make sure TREE_CONSTANT gets set for
+	constant trees.
+	(pointer_int_sum): Likewise.
+	(pointer_diff): Likewise.
+
+--- gcc/c-typeck.c	2000/11/14 09:47:13	1.102
++++ gcc/c-typeck.c	2000/11/15 16:32:02
+@@ -2652,8 +2652,7 @@ build_binary_op (code, orig_op0, orig_op
+     register tree folded;
+ 
+     folded = fold (result);
+-    if (folded == result)
+-      TREE_CONSTANT (folded) = TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
++    TREE_CONSTANT (folded) |= TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
+     if (final_type != 0)
+       return convert (final_type, folded);
+     return folded;
+@@ -2744,8 +2743,7 @@ pointer_int_sum (resultcode, ptrop, into
+   result = build (resultcode, result_type, ptrop, intop);
+ 
+   folded = fold (result);
+-  if (folded == result)
+-    TREE_CONSTANT (folded) = TREE_CONSTANT (ptrop) & TREE_CONSTANT (intop);
++  TREE_CONSTANT (folded) |= TREE_CONSTANT (ptrop) & TREE_CONSTANT (intop);
+   return folded;
+ }
+ 
+@@ -2788,8 +2786,7 @@ pointer_diff (op0, op1)
+   result = build (EXACT_DIV_EXPR, restype, op0, convert (restype, op1));
+ 
+   folded = fold (result);
+-  if (folded == result)
+-    TREE_CONSTANT (folded) = TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
++  TREE_CONSTANT (folded) |= TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
+   return folded;
+ }
+ 
+--- gcc/fold-const.c	2000/11/10 00:12:01	1.139
++++ gcc/fold-const.c	2000/11/15 16:32:04
+@@ -1357,9 +1357,6 @@ split_tree (in, code, conp, litp, negate
+ 
+   if (TREE_CODE (in) == INTEGER_CST || TREE_CODE (in) == REAL_CST)
+     *litp = in;
+-  else if (TREE_CONSTANT (in))
+-    *conp = in;
+-
+   else if (TREE_CODE (in) == code
+ 	   || (! FLOAT_TYPE_P (TREE_TYPE (in))
+ 	       /* We can associate addition and subtraction together (even
+@@ -1399,6 +1396,8 @@ split_tree (in, code, conp, litp, negate
+       if (neg_conp_p) *conp = negate_expr (*conp);
+       if (neg_var_p) var = negate_expr (var);
+     }
++  else if (TREE_CONSTANT (in))
++    *conp = in;
+   else
+     var = in;
+ 
+--- gcc/cp/typeck.c	2000/11/14 09:46:55	1.319
++++ gcc/cp/typeck.c	2000/11/15 16:32:16
+@@ -4080,8 +4080,7 @@ build_binary_op (code, orig_op0, orig_op
+     register tree folded;
+ 
+     folded = fold (result);
+-    if (folded == result)
+-      TREE_CONSTANT (folded) = TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
++    TREE_CONSTANT (folded) |= TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
+     if (final_type != 0)
+       return cp_convert (final_type, folded);
+     return folded;
+@@ -4177,8 +4176,7 @@ pointer_int_sum (resultcode, ptrop, into
+   result = build (resultcode, result_type, ptrop, intop);
+ 
+   folded = fold (result);
+-  if (folded == result)
+-    TREE_CONSTANT (folded) = TREE_CONSTANT (ptrop) & TREE_CONSTANT (intop);
++  TREE_CONSTANT (folded) |= TREE_CONSTANT (ptrop) & TREE_CONSTANT (intop);
+   return folded;
+ }
+ 
+@@ -4232,8 +4230,7 @@ pointer_diff (op0, op1, ptrtype)
+   result = build (EXACT_DIV_EXPR, restype, op0, cp_convert (restype, op1));
+ 
+   folded = fold (result);
+-  if (folded == result)
+-    TREE_CONSTANT (folded) = TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
++  TREE_CONSTANT (folded) |= TREE_CONSTANT (op0) & TREE_CONSTANT (op1);
+   return folded;
+ }
+ 
+

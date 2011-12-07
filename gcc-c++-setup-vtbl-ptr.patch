@@ -1,0 +1,90 @@
+2001-12-12  Jason Merrill  <jason@redhat.com>
+
+	* semantics.c (setup_vtbl_ptr): Always build a CTOR_INITIALIZER
+	if we're in a template.
+
+	* g++.old-deja/g++.other/vtable1.C: New test.
+
+--- gcc/cp/semantics.c.jj	Thu Nov 29 01:42:25 2001
++++ gcc/cp/semantics.c	Thu Feb 14 17:10:26 2002
+@@ -1176,9 +1176,12 @@ finish_mem_initializers (init_list)
+   setup_vtbl_ptr (member_init_list, base_init_list);
+ }
+ 
+-/* Cache the value of this class's main virtual function table pointer
+-   in a register variable.  This will save one indirection if a
+-   more than one virtual function call is made this function.  */
++/* Do the initialization work necessary at the beginning of a constructor
++   or destructor.  This means processing member initializers and setting
++   vtable pointers.
++
++   ??? The call to keep_next_level at the end applies to all functions, but
++   should probably go somewhere else.  */
+ 
+ void
+ setup_vtbl_ptr (member_init_list, base_init_list)
+@@ -1191,27 +1194,22 @@ setup_vtbl_ptr (member_init_list, base_i
+   if (vtbls_set_up_p)
+     return;
+ 
+-  if (DECL_CONSTRUCTOR_P (current_function_decl))
++  if (processing_template_decl)
++    add_tree (build_min_nt (CTOR_INITIALIZER,
++	      member_init_list, base_init_list));
++  else if (DECL_CONSTRUCTOR_P (current_function_decl))
+     {
+-      if (processing_template_decl)
+-	add_tree (build_min_nt
+-		  (CTOR_INITIALIZER,
+-		   member_init_list, base_init_list));
+-      else
+-	{
+-	  tree ctor_stmt;
+-
+-	  /* Mark the beginning of the constructor.  */
+-	  ctor_stmt = build_stmt (CTOR_STMT);
+-	  CTOR_BEGIN_P (ctor_stmt) = 1;
+-	  add_tree (ctor_stmt);
++      tree ctor_stmt;
++
++      /* Mark the beginning of the constructor.  */
++      ctor_stmt = build_stmt (CTOR_STMT);
++      CTOR_BEGIN_P (ctor_stmt) = 1;
++      add_tree (ctor_stmt);
+ 	  
+-	  /* And actually initialize the base-classes and members.  */
+-	  emit_base_init (member_init_list, base_init_list);
+-	}
++      /* And actually initialize the base-classes and members.  */
++      emit_base_init (member_init_list, base_init_list);
+     }
+-  else if (DECL_DESTRUCTOR_P (current_function_decl)
+-	   && !processing_template_decl)
++  else if (DECL_DESTRUCTOR_P (current_function_decl))
+     {
+       tree if_stmt;
+       tree compound_stmt;
+--- gcc/testsuite/g++.old-deja/g++.other/vtable1.C.jj	Thu Feb 14 16:36:59 2002
++++ gcc/testsuite/g++.old-deja/g++.other/vtable1.C	Thu Feb 14 16:37:06 2002
+@@ -0,0 +1,21 @@
++// Test that vtables are set up properly for constructors and destructors
++// of template classes.
++
++int r;
++
++template <class T>
++struct A {
++  virtual void f () { }
++  A() { f (); }
++  ~A() { f (); }
++};
++
++struct B : public A<int> {
++  virtual void f () { ++r; }
++};
++
++int main ()
++{
++  { B b; }
++  return r;
++}

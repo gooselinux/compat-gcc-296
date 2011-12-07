@@ -1,0 +1,36 @@
+2001-02-16  Jason Merrill  <jason@redhat.com>
+
+	* dwarf2out.c (add_bound_info): Don't crash if SAVE_EXPR_RTL is
+	NULL.
+
+2001-04-23  Jakub Jelinek  <jakub@redhat.com>
+
+	* g++.old-deja/g++.other/dwarf2-1.C: New test.
+
+--- gcc/dwarf2out.c	Wed Apr 11 18:21:04 2001
++++ gcc/dwarf2out.c	Mon Apr 23 10:07:19 2001
+@@ -7452,8 +7452,8 @@ add_bound_info (subrange_die, bound_attr
+ 	 We assume that a MEM rtx is safe because gcc wouldn't put the
+ 	 value there unless it was going to be used repeatedly in the
+ 	 function, i.e. for cleanups.  */
+-      if (! optimize || (SAVE_EXPR_RTL (bound)
+-			 && GET_CODE (SAVE_EXPR_RTL (bound)) == MEM))
++      if (SAVE_EXPR_RTL (bound)
++	  && (! optimize || GET_CODE (SAVE_EXPR_RTL (bound)) == MEM))
+ 	{
+ 	  register dw_die_ref ctx = lookup_decl_die (current_function_decl);
+ 	  register dw_die_ref decl_die = new_die (DW_TAG_variable, ctx);
+--- gcc/testsuite/g++.old-deja/g++.other/dwarf2-1.C.jj	Mon Apr 23 10:13:34 2001
++++ gcc/testsuite/g++.old-deja/g++.other/dwarf2-1.C	Mon Apr 23 10:15:03 2001
+@@ -0,0 +1,11 @@
++// Build don't link:
++// Special g++ Options: -gdwarf-2 -O0
++
++int foo()
++{
++  int a = 1;
++  int b = 1;
++  int e[a][b];
++  e[0][0] = 0;
++  return e[a-1][b-1];
++}

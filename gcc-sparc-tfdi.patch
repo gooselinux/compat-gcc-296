@@ -1,0 +1,44 @@
+2002-06-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/sparc/sparc.h (FLOATDITF2_LIBCALL, FIX_TRUNCTFDI2_LIBCALL,
+	FIXUNS_TRUNCTFDI2_LIBCALL): Define.
+	(INIT_TARGET_OPTABS): Use them.
+	* config/float-sparc.h: Assume 128-bit long double also if
+	__LONG_DOUBLE_128__ is defined.
+
+--- gcc/config/sparc/sparc.h.jj	Tue Jun 11 12:11:28 2002
++++ gcc/config/sparc/sparc.h	Tue Jun 11 12:18:00 2002
+@@ -2775,8 +2775,11 @@ do {                                    
+ #define MULTF3_LIBCALL "_Q_mul"
+ #define DIVTF3_LIBCALL "_Q_div"
+ #define FLOATSITF2_LIBCALL "_Q_itoq"
++#define FLOATDITF2_LIBCALL "_Q_lltoq"
+ #define FIX_TRUNCTFSI2_LIBCALL "_Q_qtoi"
+ #define FIXUNS_TRUNCTFSI2_LIBCALL "_Q_qtou"
++#define FIX_TRUNCTFDI2_LIBCALL "_Q_qtoll"
++#define FIXUNS_TRUNCTFDI2_LIBCALL "_Q_qtoull"
+ #define EXTENDSFTF2_LIBCALL "_Q_stoq"
+ #define TRUNCTFSF2_LIBCALL "_Q_qtos"
+ #define EXTENDDFTF2_LIBCALL "_Q_dtoq"
+@@ -2820,6 +2823,10 @@ do {                                    
+ 	fixtfsi_libfunc = init_one_libfunc (FIX_TRUNCTFSI2_LIBCALL);	\
+ 	fixunstfsi_libfunc						\
+ 	  = init_one_libfunc (FIXUNS_TRUNCTFSI2_LIBCALL);		\
++	floatditf_libfunc = init_one_libfunc (FLOATDITF2_LIBCALL);	\
++	fixtfdi_libfunc = init_one_libfunc (FIX_TRUNCTFDI2_LIBCALL);	\
++	fixunstfdi_libfunc						\
++	  = init_one_libfunc (FIXUNS_TRUNCTFDI2_LIBCALL);		\
+ 	if (TARGET_FPU)							\
+ 	  sqrt_optab->handlers[(int) TFmode].libfunc			\
+ 	    = init_one_libfunc ("_Q_sqrt");				\
+--- gcc/config/float-sparc.h.jj	Tue Jun 11 18:27:52 2002
++++ gcc/config/float-sparc.h	Wed Jun 12 00:11:18 2002
+@@ -66,7 +66,7 @@
+ #undef DBL_MAX_10_EXP
+ #define DBL_MAX_10_EXP 308
+ 
+-#if defined(__sparcv9) || defined(__arch64__)
++#if defined(__sparcv9) || defined(__arch64__) || defined(__LONG_DOUBLE_128__)
+ 
+    /* Number of base-FLT_RADIX digits in the significand of a long double */
+ #undef LDBL_MANT_DIG

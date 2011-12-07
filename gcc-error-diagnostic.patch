@@ -1,0 +1,165 @@
+2000-12-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* toplev.c (crash_signal): Exit with confused by earlier errors,
+	bailing out if errorcount > 0 or sorrycount > 0.
+	* diagnostic.c (_fatal_insn, fancy_abort): Likewise.
+	* except.c (start_catch_handler): Decrement errorcount before abort.
+	* final.c (output_operand_losage): Likewise.
+	* rtl.c (rtl_check_failed_bounds): Likewise.
+	(rtl_check_failed_type1): Likewise.
+	(rtl_check_failed_type2): Likewise.
+	(rtl_check_failed_code1): Likewise.
+	(rtl_check_failed_code2): Likewise.
+	(rtvec_check_failed_bounds): Likewise.
+	* varray.c (varray_check_failed): Likewise.
+	* tree.c (tree_check_failed): Likewise.
+	(tree_class_check_failed): Likewise.
+
+--- gcc/toplev.c.jj	Wed Dec  6 16:50:07 2000
++++ gcc/toplev.c	Mon Dec 11 14:00:53 2000
+@@ -1637,6 +1637,12 @@ crash_signal (signo)
+      /* If this is missing, some compilers complain.  */
+      int signo;
+ {
++  if (errorcount > 0 || sorrycount > 0)
++    {
++      error ("confused by earlier errors, bailing out");
++      exit (FATAL_EXIT_CODE);
++    }
++
+   fatal ("Internal error: %s.\n\
+ Please submit a full bug report.\n\
+ See %s for instructions.", strsignal (signo), GCCBUGURL);
+--- gcc/diagnostic.c.jj	Mon Jul 24 11:04:17 2000
++++ gcc/diagnostic.c	Mon Dec 11 14:12:14 2000
+@@ -1295,6 +1295,11 @@ _fatal_insn (msgid, insn, file, line, fu
+      int line;
+      const char *function;
+ {
++  if (errorcount > 0 || sorrycount > 0)
++    {
++      error ("confused by earlier errors, bailing out");
++      exit (FATAL_EXIT_CODE);
++    }
+   error ("%s", msgid);
+   debug_rtx (insn);
+   fancy_abort (file, line, function);
+@@ -1546,6 +1551,12 @@ fancy_abort (file, line, function)
+      int line;
+      const char *function;
+ {
++  if (errorcount > 0 || sorrycount > 0)
++    {
++      error ("confused by earlier errors, bailing out");
++      exit (FATAL_EXIT_CODE);
++    }
++
+   fatal (
+ "Internal compiler error in %s, at %s:%d\n\
+ Please submit a full bug report.\n\
+--- gcc/except.c.jj	Thu Jun  1 11:56:31 2000
++++ gcc/except.c	Mon Dec 11 17:45:47 2000
+@@ -1749,6 +1749,7 @@ start_catch_handler (rtime)
+       if (catchstack.top->entry->false_label != NULL_RTX)
+ 	{
+ 	  error ("Never issued previous false_label");
++	  errorcount--;
+ 	  abort ();
+ 	}
+       catchstack.top->entry->false_label = gen_exception_label ();
+--- gcc/final.c.jj	Wed Dec  6 16:49:58 2000
++++ gcc/final.c	Mon Dec 11 17:47:49 2000
+@@ -3398,6 +3398,7 @@ output_operand_lossage (msgid)
+   else
+     {
+       error ("output_operand: %s", _(msgid));
++      errorcount--;
+       abort ();
+     }
+ }
+--- gcc/rtl.c.jj	Mon Jul 24 11:04:19 2000
++++ gcc/rtl.c	Mon Dec 11 18:10:32 2000
+@@ -1122,6 +1122,7 @@ rtl_check_failed_bounds (r, n, file, lin
+ {
+   error ("RTL check: access of elt %d of `%s' with last elt %d",
+ 	 n, GET_RTX_NAME (GET_CODE (r)), GET_RTX_LENGTH (GET_CODE (r))-1);
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ 
+@@ -1136,6 +1137,7 @@ rtl_check_failed_type1 (r, n, c1, file, 
+ {
+   error ("RTL check: expected elt %d type '%c', have '%c' (rtx %s)",
+ 	 n, c1, GET_RTX_FORMAT (GET_CODE (r))[n], GET_RTX_NAME (GET_CODE (r)));
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ 
+@@ -1152,6 +1154,7 @@ rtl_check_failed_type2 (r, n, c1, c2, fi
+   error ("RTL check: expected elt %d type '%c' or '%c', have '%c' (rtx %s)",
+ 	 n, c1, c2,
+ 	 GET_RTX_FORMAT (GET_CODE (r))[n], GET_RTX_NAME (GET_CODE(r)));
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ 
+@@ -1165,6 +1168,7 @@ rtl_check_failed_code1 (r, code, file, l
+ {
+   error ("RTL check: expected code `%s', have `%s'",
+  	 GET_RTX_NAME (code), GET_RTX_NAME (GET_CODE (r)));
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ 
+@@ -1179,6 +1183,7 @@ rtl_check_failed_code2 (r, code1, code2,
+   error ("RTL check: expected code `%s' or `%s', have `%s'",
+  	 GET_RTX_NAME (code1), GET_RTX_NAME (code2),
+ 	 GET_RTX_NAME (GET_CODE (r)));
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ 
+@@ -1193,6 +1198,7 @@ rtvec_check_failed_bounds (r, n, file, l
+ {
+   error ("RTL check: access of elt %d of vector with last elt %d",
+ 	 n, GET_NUM_ELEM (r)-1);
++  errorcount--;
+   fancy_abort (file, line, func);
+ }
+ #endif /* ENABLE_RTL_CHECKING */
+--- gcc/varray.c.jj	Tue Jan 18 22:33:01 2000
++++ gcc/varray.c	Mon Dec 11 18:11:08 2000
+@@ -25,6 +25,7 @@
+ #include "tree.h"
+ #include "bitmap.h"
+ #include "varray.h"
++#include "toplev.h"
+ 
+ #define VARRAY_HDR_SIZE (sizeof (struct varray_head_tag) - sizeof (varray_data))
+ 
+@@ -86,6 +87,7 @@ varray_check_failed (va, n, file, line, 
+ {
+   error("Virtual array %s[%lu]: element %lu out of bounds",
+ 	va->name, (unsigned long) va->num_elements, (unsigned long) n);
++  errorcount--;
+   fancy_abort (file, line, function);
+ }
+ 
+--- gcc/tree.c.jj	Thu Jul 13 14:53:33 2000
++++ gcc/tree.c	Mon Dec 11 18:11:44 2000
+@@ -5592,6 +5592,7 @@ tree_check_failed (node, code, file, lin
+ {
+   error ("Tree check: expected %s, have %s",
+ 	 tree_code_name[code], tree_code_name[TREE_CODE (node)]);
++  errorcount--;
+   fancy_abort (file, line, function);
+ }
+ 
+@@ -5608,6 +5609,7 @@ tree_class_check_failed (node, cl, file,
+   error ("Tree check: expected class '%c', have '%c' (%s)",
+ 	 cl, TREE_CODE_CLASS (TREE_CODE (node)),
+ 	 tree_code_name[TREE_CODE (node)]);
++  errorcount--;
+   fancy_abort (file, line, function);
+ }
+ 

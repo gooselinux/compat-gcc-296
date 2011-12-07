@@ -1,0 +1,30 @@
+2001-04-25  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/ia64.h (CC1_SPEC): Define.
+	* config/ia64/linux.h (CC1_SPEC): Define.
+
+--- gcc/config/ia64/ia64.h.jj	Wed Apr 25 13:12:57 2001
++++ gcc/config/ia64/ia64.h	Wed Apr 25 16:08:15 2001
+@@ -227,7 +227,8 @@ extern const char *ia64_fixed_range_stri
+    `cc1'.  It can also specify how to translate options you give to GNU CC into
+    options for GNU CC to pass to the `cc1'.  */
+ 
+-/* #define CC1_SPEC "" */
++#undef CC1_SPEC
++#define CC1_SPEC "%{G*}"
+ 
+ /* A C string constant that tells the GNU CC driver program options to pass to
+    `cc1plus'.  It can also specify how to translate options you give to GNU CC
+--- gcc/config/ia64/linux.h.jj	Fri Nov  3 10:53:39 2000
++++ gcc/config/ia64/linux.h	Wed Apr 25 16:12:21 2001
+@@ -3,6 +3,10 @@
+ #include <linux.h>
+ #include "sysv4.h"
+ 
++/* This is for -profile to use -lc_p instead of -lc. */
++#undef CC1_SPEC
++#define CC1_SPEC "%{profile:-p} %{G*}"
++
+ /* ??? Maybe this should be in sysv4.h?  */
+ #define CPP_PREDEFINES "\
+ -D__ia64 -D__ia64__ -D__linux -D__linux__ -D_LONGLONG -Dlinux -Dunix \

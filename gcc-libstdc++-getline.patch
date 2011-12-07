@@ -1,0 +1,40 @@
+2001-03-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* std/bastring.cc (getline): Prefix count with __.
+
+--- libstdc++/std/bastring.cc.jj	Wed Dec 22 09:39:43 1999
++++ libstdc++/std/bastring.cc	Mon Mar 19 16:48:26 2001
+@@ -476,7 +476,7 @@ getline (istream &is, basic_string <char
+ {
+   if (is.ipfx1 ())
+     {
+-      _IO_size_t count = 0;
++      _IO_size_t __count = 0;
+       streambuf *sb = is.rdbuf ();
+       s.resize (0);
+ 
+@@ -485,13 +485,13 @@ getline (istream &is, basic_string <char
+ 	  int ch = sb->sbumpc ();
+ 	  if (ch == EOF)
+ 	    {
+-	      is.setstate (count == 0
++	      is.setstate (__count == 0
+ 			   ? (ios::failbit|ios::eofbit)
+ 			   : ios::eofbit);
+ 	      break;
+ 	    }
+ 
+-	  ++count;
++	  ++__count;
+ 
+ 	  if (ch == delim)
+ 	    break;
+@@ -507,7 +507,7 @@ getline (istream &is, basic_string <char
+     }
+ 
+   // We need to be friends with istream to do this.
+-  // is._gcount = count;
++  // is._gcount = __count;
+   is.isfx ();
+ 
+   return is;

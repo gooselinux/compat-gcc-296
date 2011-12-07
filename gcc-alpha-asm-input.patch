@@ -1,0 +1,35 @@
+2001-10-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/alpha/alpha.c (summarize_insn): Don't abort on ASM_INPUT.
+
+	* gcc.dg/20011018-1.c: New test.
+
+--- gcc/config/alpha/alpha.c.jj	Thu Oct 11 19:59:58 2001
++++ gcc/config/alpha/alpha.c	Thu Oct 18 12:36:51 2001
+@@ -6849,7 +6849,7 @@ summarize_insn (x, sum, set)
+ 
+     case CONST_INT:   case CONST_DOUBLE:
+     case SYMBOL_REF:  case LABEL_REF:     case CONST:
+-    case SCRATCH:
++    case SCRATCH:     case ASM_INPUT:
+       break;
+ 
+       /* Handle common unary and binary ops for efficiency.  */
+--- gcc/testsuite/gcc.dg/20011018-1.c.jj	Thu Oct 18 12:36:12 2001
++++ gcc/testsuite/gcc.dg/20011018-1.c	Thu Oct 18 12:36:08 2001
+@@ -0,0 +1,15 @@
++/* { dg-do compile { target alpha*-*-* } } */
++/* { dg-options "-O2 -mieee" } */
++
++double foo (void);
++void bar (float, float);
++
++void test (void)
++{
++  float f, g;
++
++  f = foo();
++  g = foo();
++  asm ("");
++  bar (f, g);
++}

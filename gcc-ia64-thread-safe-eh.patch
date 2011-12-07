@@ -1,0 +1,76 @@
+2002-03-13  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/frame-ia64.c (execute_one_ia64_descriptor): Don't
+	use static variables.
+	(__build_ia64_frame_state): Add automatic region_header variable,
+	initialize it and pass address of it to execute_one_ia64_descriptor.
+
+--- gcc/config/ia64/frame-ia64.c.jj	Wed Mar 13 14:18:10 2002
++++ gcc/config/ia64/frame-ia64.c	Wed Mar 13 15:42:13 2002
+@@ -650,20 +650,18 @@ init_ia64_unwind_frame (frame) 
+    the return value is a pointer to the start of the next descriptor.  */
+ 
+ static void *
+-execute_one_ia64_descriptor (addr, frame, len)
++execute_one_ia64_descriptor (addr, frame, len, header)
+      void *addr;
+      ia64_frame_state *frame;
+      long *len;
++     unwind_record *header;
+ {
+   unwind_record r;
+-  /* The last region_header.  Needed to distinguish between prologue and body
+-     descriptors.  Also needed for length of P4 format.  */
+-  static unwind_record region_header;
+   ia64_reg_loc *loc_ptr = NULL;
+   int grmask = 0, frmask = 0;
+ 
+   *len = -1;
+-  addr = get_unwind_record (&region_header, &r, addr);
++  addr = get_unwind_record (header, &r, addr);
+ 
+   /* Process it in 2 phases, the first phase will either do the work,
+      or set up a pointer to the records we care about 
+@@ -674,7 +672,7 @@ execute_one_ia64_descriptor (addr, frame
+       case prologue:
+       case body:
+ 	*len = r.record.r.rlen;
+-	memcpy (&region_header, &r, sizeof (unwind_record));
++	memcpy (header, &r, sizeof (unwind_record));
+ 	break;
+       case prologue_gr:
+         {
+@@ -707,7 +705,7 @@ execute_one_ia64_descriptor (addr, frame
+ 	      frame->pr.loc_type  = IA64_UNW_LOC_TYPE_GR;
+ 	      frame->pr.l.regno = reg++;
+ 	    }
+-	  memcpy (&region_header, &r, sizeof (unwind_record));
++	  memcpy (header, &r, sizeof (unwind_record));
+ 	  break;
+ 	}
+       case mem_stack_f:
+@@ -1263,6 +1261,7 @@ __build_ia64_frame_state (pc, frame, bsp
+   void *pc_base;
+   int pc_offset;
+   struct unwind_info_ptr *unw_info_ptr;
++  unwind_record region_header;
+ 
+   entry = find_fde (pc, &pc_base);
+   if (!entry)
+@@ -1277,6 +1276,7 @@ __build_ia64_frame_state (pc, frame, bsp
+   init_ia64_unwind_frame (frame);
+   frame->my_bsp = bsp;
+   frame->my_sp = sp;
++  region_header.type = prologue;
+ 
+   /* Stop when we get to the end of the descriptor list, or if we
+      encounter a region whose initial offset is already past the
+@@ -1285,7 +1285,7 @@ __build_ia64_frame_state (pc, frame, bsp
+   while (addr < end && pc_offset > region_offset)
+     {
+       /* First one must be a record header.  */
+-      addr = execute_one_ia64_descriptor (addr, frame, &len);
++      addr = execute_one_ia64_descriptor (addr, frame, &len, &region_header);
+       if (len > 0)
+         {
+ 	  region_offset += last_region_size;

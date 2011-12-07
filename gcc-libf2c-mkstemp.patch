@@ -1,0 +1,167 @@
+2000-11-15  Toon Moene  <toon@moene.indiv.nluug.nl>
+
+	* libI77/configure.in: See if `mkstemp' is available.
+	* libI77/configure: Regenerate.
+	* libI77/open.c: Use `mkstemp' to create scratch
+	file atomically.
+
+--- libf2c/libI77/configure	Wed Feb 24 09:15:18 1999
++++ libf2c/libI77/configure	Fri Nov 17 11:24:41 2000
+@@ -1338,7 +1338,7 @@
+   echo "$ac_t""no" 1>&6
+ fi
+ 
+-for ac_func in tempnam
++for ac_func in mkstemp
+ do
+ echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
+ echo "configure:1345: checking for $ac_func" >&5
+@@ -1393,25 +1393,80 @@
+ fi
+ done
+ 
++for ac_func in tempnam
++do
++echo $ac_n "checking for $ac_func""... $ac_c" 1>&6
++echo "configure:1400: checking for $ac_func" >&5
++if eval "test \"`echo '$''{'ac_cv_func_$ac_func'+set}'`\" = set"; then
++  echo $ac_n "(cached) $ac_c" 1>&6
++else
++  cat > conftest.$ac_ext <<EOF
++#line 1405 "configure"
++#include "confdefs.h"
++/* System header to define __stub macros and hopefully few prototypes,
++    which can conflict with char $ac_func(); below.  */
++#include <assert.h>
++/* Override any gcc2 internal prototype to avoid an error.  */
++/* We use char because int might match the return type of a gcc2
++    builtin and then its argument prototype would still apply.  */
++char $ac_func();
++
++int main() {
++
++/* The GNU C library defines this for functions which it implements
++    to always fail with ENOSYS.  Some functions are actually named
++    something starting with __ and the normal name is an alias.  */
++#if defined (__stub_$ac_func) || defined (__stub___$ac_func)
++choke me
++#else
++$ac_func();
++#endif
++
++; return 0; }
++EOF
++if { (eval echo configure:1428: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext}; then
++  rm -rf conftest*
++  eval "ac_cv_func_$ac_func=yes"
++else
++  echo "configure: failed program was:" >&5
++  cat conftest.$ac_ext >&5
++  rm -rf conftest*
++  eval "ac_cv_func_$ac_func=no"
++fi
++rm -f conftest*
++fi
++
++if eval "test \"`echo '$ac_cv_func_'$ac_func`\" = yes"; then
++  echo "$ac_t""yes" 1>&6
++    ac_tr_func=HAVE_`echo $ac_func | tr 'abcdefghijklmnopqrstuvwxyz' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'`
++  cat >> confdefs.h <<EOF
++#define $ac_tr_func 1
++EOF
++ 
++else
++  echo "$ac_t""no" 1>&6
++fi
++done
++
+ 
+ # posix will guarantee the right behaviour for sprintf, else we can't be
+ # sure; HEADER_STDC wouldn't be the right check in sunos4, for instance.
+ # However, on my sunos4/gcc setup unistd.h leads us wrongly to believe
+ # we're posix-conformant, so always do the test.
+ echo $ac_n "checking for ansi/posix sprintf result""... $ac_c" 1>&6
+-echo "configure:1403: checking for ansi/posix sprintf result" >&5
++echo "configure:1458: checking for ansi/posix sprintf result" >&5
+ if test "$cross_compiling" = yes; then
+   g77_cv_sys_sprintf_ansi=no
+ else
+   cat > conftest.$ac_ext <<EOF
+-#line 1408 "configure"
++#line 1463 "configure"
+ #include "confdefs.h"
+   #include <stdio.h>
+     /* does sprintf return the number of chars transferred? */
+     main () {char foo[2]; (sprintf(foo, "1") == 1) ? exit(0) : exit(1);}
+ 
+ EOF
+-if { (eval echo configure:1415: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext} && (./conftest; exit) 2>/dev/null
++if { (eval echo configure:1470: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext} && (./conftest; exit) 2>/dev/null
+ then
+   g77_cv_sys_sprintf_ansi=yes
+ else
+@@ -1442,9 +1497,9 @@
+ 
+ # define NON_ANSI_RW_MODES on unix (can't hurt)
+ echo $ac_n "checking NON_ANSI_RW_MODES""... $ac_c" 1>&6
+-echo "configure:1446: checking NON_ANSI_RW_MODES" >&5
++echo "configure:1501: checking NON_ANSI_RW_MODES" >&5
+ cat > conftest.$ac_ext <<EOF
+-#line 1448 "configure"
++#line 1503 "configure"
+ #include "confdefs.h"
+ #ifdef unix
+   yes
+--- libf2c/libI77/configure.in	Mon Nov 23 14:58:47 1998
++++ libf2c/libI77/configure.in	Fri Nov 17 11:24:41 2000
+@@ -129,6 +129,7 @@
+   AC_MSG_RESULT(no)
+ fi
+ 
++AC_CHECK_FUNCS(mkstemp)
+ AC_CHECK_FUNCS(tempnam)
+ 
+ # posix will guarantee the right behaviour for sprintf, else we can't be
+--- libf2c/libI77/open.c	Mon May 10 16:40:59 1999
++++ libf2c/libI77/open.c	Fri Nov 17 11:24:41 2000
+@@ -133,10 +133,11 @@
+ #endif
+ {	unit *b;
+ 	integer rv;
+-	char buf[256], *s;
++	char buf[256], *s, *env;
+ 	cllist x;
+ 	int ufmt;
+ 	FILE *tf;
++	int fd, len;
+ #ifndef NON_UNIX_STDIO
+ 	int n;
+ #endif
+@@ -209,6 +210,19 @@
+ 	 case 's':
+ 	 case 'S':
+ 		b->uscrtch=1;
++#ifdef HAVE_MKSTEMP             /* Allow use of TMPDIR preferentially. */
++		env = getenv("TMPDIR");
++		if (!env) env = getenv("TEMP");
++		if (!env) env = "/tmp";
++		len = strlen(env);
++		if (len > 256 - sizeof "/tmp.FXXXXXX")
++		  err (a->oerr, 132, "open");
++		strcpy(buf, env);
++		strcat(buf, "/tmp.FXXXXXX");
++		fd = mkstemp(buf);
++		if (fd == -1 || close(fd))
++		  err (a->oerr, 132, "open");
++#else /* ! defined (HAVE_MKSTEMP) */
+ #ifdef HAVE_TEMPNAM		/* Allow use of TMPDIR preferentially. */
+ 		s = tempnam (0, buf);
+ 		if (strlen (s) >= sizeof (buf))
+@@ -223,6 +237,7 @@
+ 		(void) mktemp(buf);
+ #endif
+ #endif /* ! defined (HAVE_TEMPNAM) */
++#endif /* ! defined (HAVE_MKSTEMP) */
+ 		goto replace;
+ 	case 'n':
+ 	case 'N':

@@ -1,0 +1,77 @@
+2001-05-07  Jakub Jelinek  <jakub@redhat.com>
+
+	* decl2.c (import_export_decl): Emit referenced inline methods even
+	in the unit which just imports the class.
+
+	* g++.old-deja/g++.other/inline21.C: New test.
+
+--- gcc/cp/decl2.c.jj	Thu May  3 16:12:37 2001
++++ gcc/cp/decl2.c	Sat May  5 16:29:55 2001
+@@ -2777,16 +2777,28 @@ import_export_decl (decl)
+ 	      ? (! DECL_THIS_INLINE (decl))
+ 	      : (! DECL_ARTIFICIAL (decl) || DECL_VINDEX (decl))))
+ 	{
+-	  DECL_NOT_REALLY_EXTERN (decl)
+-	    = ! (CLASSTYPE_INTERFACE_ONLY (ctype)
+-		 || (DECL_THIS_INLINE (decl) && ! flag_implement_inlines
+-		     && !DECL_VINDEX (decl)));
+-
+-	  /* Always make artificials weak.  */
+-	  if (DECL_ARTIFICIAL (decl) && flag_weak)
++	  if (! flag_new_abi && DECL_THIS_INLINE (decl)
++	      && ! DECL_ARTIFICIAL (decl)
++	      && ! DECL_VINDEX (decl) && CLASSTYPE_INTERFACE_ONLY (ctype))
++	    /* The heuristic does not work well, since even if we are
++	       interface only unit of a certain class, some methods can
++	       be declared inline only in this unit (provided they are
++	       used only there). In this case, emit linkonce code of the
++	       inline function as well.  */
+ 	    comdat_linkage (decl);
+ 	  else
+-	    maybe_make_one_only (decl);
++	    {
++	      DECL_NOT_REALLY_EXTERN (decl)
++		= ! (CLASSTYPE_INTERFACE_ONLY (ctype)
++		     || (DECL_THIS_INLINE (decl) && ! flag_implement_inlines
++			 && !DECL_VINDEX (decl)));
++
++	      /* Always make artificials weak.  */
++	      if (DECL_ARTIFICIAL (decl) && flag_weak)
++		comdat_linkage (decl);
++	      else
++		maybe_make_one_only (decl);
++	    }
+ 	}
+       else
+ 	comdat_linkage (decl);
+--- gcc/testsuite/g++.old-deja/g++.other/inline21.C.jj	Mon May  7 17:03:08 2001
++++ gcc/testsuite/g++.old-deja/g++.other/inline21.C	Fri May  4 18:27:04 2001
+@@ -0,0 +1,28 @@
++// Build don't run:
++
++struct B
++{
++  virtual ~B() {}
++};
++
++struct A : public B
++{
++  ~A();
++  void foo(void);
++  void bar(void);
++};
++
++inline void A::foo(void)
++{
++  static int i;
++  i++;
++}
++
++void A::bar()
++{
++  foo();
++}
++
++int main()
++{
++}

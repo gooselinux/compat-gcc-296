@@ -1,0 +1,133 @@
+2002-09-11  Jason Merrill  <jason@redhat.com>
+
+	* typeck2.c (add_exception_specifier): Only pedwarn for an
+	incomplete type.
+	(require_complete_eh_spec_types): New fn.
+	* call.c (build_call): Call require_complete_eh_spec_types.
+	* rtti.c (get_tinfo_decl): Give an error rather than aborting
+	on an incomplete type.
+
+--- gcc/cp/call.c.jj	2002-07-04 00:26:23.000000000 +0200
++++ gcc/cp/call.c	2002-09-11 19:36:00.000000000 +0200
+@@ -370,6 +370,7 @@ build_call (function, parms)
+   tree tmp;
+   tree decl;
+   tree result_type;
++  tree fntype;
+ 
+   function = build_addr_func (function);
+ 
+@@ -379,7 +380,8 @@ build_call (function, parms)
+       return error_mark_node;
+     }
+ 
+-  result_type = TREE_TYPE (TREE_TYPE (TREE_TYPE (function)));
++  fntype = TREE_TYPE (TREE_TYPE (function));
++  result_type = TREE_TYPE (fntype);
+ 
+   if (TREE_CODE (function) == ADDR_EXPR
+       && TREE_CODE (TREE_OPERAND (function, 0)) == FUNCTION_DECL)
+@@ -391,7 +393,9 @@ build_call (function, parms)
+      throw without being declared throw().  */
+   nothrow = ((decl && TREE_NOTHROW (decl))
+ 	     || TYPE_NOTHROW_P (TREE_TYPE (TREE_TYPE (function))));
+-  
++
++  require_complete_eh_spec_types (fntype, decl);
++
+   if (decl && DECL_CONSTRUCTOR_P (decl))
+     is_constructor = 1;
+ 
+--- gcc/cp/rtti.c.jj	2000-07-10 08:08:39.000000000 +0200
++++ gcc/cp/rtti.c	2002-09-11 19:34:50.000000000 +0200
+@@ -426,6 +426,8 @@ get_tinfo_decl (type)
+       SET_DECL_TINFO_FN_P (d);
+       TREE_TYPE (name) = type;
+       defer_fn (d);
++      if (!at_eof && !COMPLETE_TYPE_P (type) && !VOID_TYPE_P (type))
++	incomplete_type_error (NULL_TREE, type);
+     }
+   else
+     {
+--- gcc/cp/typeck2.c.jj	2002-07-04 00:26:19.000000000 +0200
++++ gcc/cp/typeck2.c	2002-09-11 19:39:16.000000000 +0200
+@@ -1374,7 +1374,8 @@ add_exception_specifier (list, spec, com
+   int ok;
+   tree core = spec;
+   int is_ptr;
+-  
++  int diag_type = -1; /* none */
++
+   if (spec == error_mark_node)
+     return list;
+   
+@@ -1395,7 +1396,15 @@ add_exception_specifier (list, spec, com
+   else if (processing_template_decl)
+     ok = 1;
+   else
+-    ok = COMPLETE_TYPE_P (complete_type (core));
++    {
++      ok = 1;
++      /* 15.4/1 says that types in an exception specifier must be complete,
++         but it seems more reasonable to only require this on definitions
++         and calls.  So just give a pedwarn at this point; we will give an
++         error later if we hit one of those two cases.  */
++      if (!COMPLETE_TYPE_P (complete_type (core)))
++      diag_type = 2; /* pedwarn */
++    }
+ 
+   if (ok)
+     {
+@@ -1411,7 +1420,50 @@ add_exception_specifier (list, spec, com
+           list = spec;
+         }
+     }
+-  else if (complain)
+-    incomplete_type_error (NULL_TREE, core);
++  else
++    diag_type = 0; /* error */
++
++  if (diag_type >= 0 && complain)
++    {
++      if (diag_type == 0)
++      incomplete_type_error (NULL_TREE, core);
++      else
++      {
++        cp_pedwarn ("incomplete type `%T' used in exception-specification",
++                    core);
++        cp_pedwarn_at ("forward declaration of `%#T'", core);
++      }
++    }
+   return list;
+ }
++
++/* Subroutine of build_call.  Ensure that each of the types in the
++   exception specification is complete.  Technically, 15.4/1 says that
++   they need to be complete when we see a declaration of the function,
++   but we should be able to get away with only requiring this when the
++   function is defined or called.  See also add_exception_specifier.  */
++
++void
++require_complete_eh_spec_types (fntype, decl)
++     tree fntype, decl;
++{
++  tree raises;
++  /* Don't complain about calls to op new.  */
++  if (decl && DECL_ARTIFICIAL (decl))
++    return;
++  for (raises = TYPE_RAISES_EXCEPTIONS (fntype); raises;
++       raises = TREE_CHAIN (raises))
++    {
++      tree type = TREE_VALUE (raises);
++      if (type && !COMPLETE_TYPE_P (type))
++      {
++        if (decl)
++          cp_error
++            ("call to function `%D' which throws incomplete type `%#T'",
++             decl, type);
++        else
++          cp_error ("call to function which throws incomplete type `%#T'",
++                 decl);
++      }
++    }
++}

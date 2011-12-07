@@ -1,0 +1,38 @@
+2001-04-23  Jakub Jelinek  <jakub@redhat.com>
+
+	* emit-rtl.c (subreg_hard_regno): Only do HARD_REGNO_MODE_OK check
+	if check_mode is non-zero.
+
+	* gcc.dg/20010423-1.c: New test.
+
+--- gcc/testsuite/gcc.dg/20010423-1.c.jj	Mon Apr 23 10:37:45 2001
++++ gcc/testsuite/gcc.dg/20010423-1.c	Mon Apr 23 10:38:57 2001
+@@ -0,0 +1,17 @@
++/* { dg-do compile { target ia64-*-* } } */
++/* { dg-options "-O2" } */
++
++int __sync_fetch_and_add_si (int *, int);
++
++inline unsigned int
++bar (volatile unsigned int *mem, unsigned int val)
++{
++  return __sync_fetch_and_add_si((int *)mem, (int)val);
++}
++
++volatile unsigned int x;
++
++void foo (unsigned short *a)
++{
++  *a = bar (&x, 1) + 1;
++}
+--- gcc/emit-rtl.c.jj	Thu Apr  5 00:12:39 2001
++++ gcc/emit-rtl.c	Mon Apr 23 10:35:29 2001
+@@ -719,7 +719,7 @@ subreg_hard_regno (x, check_mode)
+   base_regno = REGNO (reg);
+   if (base_regno >= FIRST_PSEUDO_REGISTER)
+     abort ();
+-  if (! HARD_REGNO_MODE_OK (base_regno, GET_MODE (reg)))
++  if (check_mode && ! HARD_REGNO_MODE_OK (base_regno, GET_MODE (reg)))
+     abort ();
+ 
+   /* Catch non-congruent offsets too.  */

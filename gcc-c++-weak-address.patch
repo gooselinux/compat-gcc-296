@@ -1,0 +1,33 @@
+2001-08-03  H.J. Lu  <hjl@gnu.org>
+
+	* cvt.c (ocp_convert): Don't warn the address of a weak
+	function is always `true'.
+
+	* g++.old-deja/g++.other/weak1.C: New test.
+
+--- gcc/cp/cvt.c.jj	Tue Jul 24 20:40:55 2001
++++ gcc/cp/cvt.c	Tue Aug  7 11:42:45 2001
+@@ -768,7 +768,7 @@ ocp_convert (type, expr, convtype, flags
+ 	  else if (TREE_CODE (expr) == ADDR_EXPR 
+ 		   && TREE_CODE (TREE_OPERAND (expr, 0)) == FUNCTION_DECL)
+ 	    fn = TREE_OPERAND (expr, 0);
+-	  if (fn)
++	  if (fn && !DECL_WEAK (fn))
+ 	    cp_warning ("the address of `%D', will always be `true'", fn);
+ 	  return truthvalue_conversion (e);
+ 	}
+--- gcc/testsuite/g++.old-deja/g++.other/weak1.C.jj	Tue Aug  7 11:44:42 2001
++++ gcc/testsuite/g++.old-deja/g++.other/weak1.C	Tue Aug  7 11:44:54 2001
+@@ -0,0 +1,12 @@
++// Build don't link:
++
++extern void foo (void) __attribute__ ((weak));
++
++int
++main ()
++{
++  if (&foo)
++    foo ();
++
++  return 0;
++}

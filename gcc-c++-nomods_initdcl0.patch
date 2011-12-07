@@ -1,0 +1,20 @@
+2001-01-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* parse.y (nomods_initdcl0): Properly set things up for
+	initdcl0_innards.
+
+--- gcc/cp/parse.y.jj	Fri Jan 12 11:35:46 2001
++++ gcc/cp/parse.y	Thu Jan 18 00:35:24 2001
+@@ -2072,8 +2072,10 @@ notype_initdcl0:
+ nomods_initdcl0:
+           notype_declarator maybeasm
+             { /* Set things up as initdcl0_innards expects.  */
+-	      $<ttype>2 = $1; 
+-              $1 = NULL_TREE; }
++	      $<ttype>3 = $2;
++	      $2 = $1; 
++              $<ftype>1.t = NULL_TREE;
++	      $<ftype>1.lookups = NULL_TREE; }
+           initdcl0_innards 
+             {}
+ 	| constructor_declarator maybeasm maybe_attribute

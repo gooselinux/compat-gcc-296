@@ -1,0 +1,39 @@
+--- gcc/config/ia64/ia64.c.jj	Wed Jun  7 08:41:10 2000
++++ gcc/config/ia64/ia64.c	Mon Feb  5 14:56:13 2001
+@@ -3318,8 +4573,12 @@ ia64_encode_section_info (decl)
+   /* ??? Actually, we can put globals in sdata, as long as we don't use gprel
+      to access them.  The linker may then be able to do linker relaxation to
+      optimize references to them.  Currently sdata implies use of gprel.  */
++  /* We need the DECL_EXTERNAL check for C++.  static class data members get
++     both TREE_STATIC and DECL_EXTERNAL set, to indicate that they are
++     statically allocated, but the space is allocated somewhere else.  Such
++     decls can not be own data.  */
+   if (! TARGET_NO_SDATA
+-      && TREE_STATIC (decl)
++      && TREE_STATIC (decl) && ! DECL_EXTERNAL (decl)
+       && ! (DECL_ONE_ONLY (decl) || DECL_WEAK (decl))
+       && ! (TREE_PUBLIC (decl)
+ 	    && (flag_pic
+@@ -3334,7 +4593,7 @@ ia64_encode_section_info (decl)
+ 	  || ! strcmp (TREE_STRING_POINTER (DECL_SECTION_NAME (decl)),
+ 		       ".sbss")))
+     {
+-      int size = int_size_in_bytes (TREE_TYPE (decl));
++      HOST_WIDE_INT size = int_size_in_bytes (TREE_TYPE (decl));
+ 
+       /* If the variable has already been defined in the output file, then it
+ 	 is too late to put it in sdata if it wasn't put there in the first
+@@ -3346,10 +4605,11 @@ ia64_encode_section_info (decl)
+ 
+       /* If this is an incomplete type with size 0, then we can't put it in
+ 	 sdata because it might be too big when completed.  */
+-      else if (size > 0 && size <= ia64_section_threshold
++      else if (size > 0
++	       && size <= (HOST_WIDE_INT) ia64_section_threshold
+ 	       && symbol_str[0] != SDATA_NAME_FLAG_CHAR)
+ 	{
+-	  int len = strlen (symbol_str);
++	  size_t len = strlen (symbol_str);
+ 	  char *newstr;
+ 
+ 	  if (ggc_p)

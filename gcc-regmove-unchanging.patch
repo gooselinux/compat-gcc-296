@@ -1,0 +1,67 @@
+2001-05-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* regmove.c (regmove_optimize): Suppress the optimization for
+	unchanging destination register.
+
+	* g++.old-deja/g++.other/unchanging1.C: New test.
+
+--- gcc/regmove.c.jj	Wed May  9 20:56:14 2001
++++ gcc/regmove.c	Fri May 11 12:58:10 2001
+@@ -1263,7 +1263,8 @@ regmove_optimize (f, nregs, regmove_dump
+ 
+ 	      if (GET_CODE (dst) != REG
+ 		  || REGNO (dst) < FIRST_PSEUDO_REGISTER
+-		  || REG_LIVE_LENGTH (REGNO (dst)) < 0)
++		  || REG_LIVE_LENGTH (REGNO (dst)) < 0
++		  || RTX_UNCHANGING_P (dst))
+ 		continue;
+ 
+ 	      /* If the operands already match, then there is nothing to do. */
+--- gcc/testsuite/g++.old-deja/g++.other/unchanging1.C.jj	Fri May 11 13:02:05 2001
++++ gcc/testsuite/g++.old-deja/g++.other/unchanging1.C	Fri May 11 13:02:44 2001
+@@ -0,0 +1,45 @@
++// Special g++ Options: -O2
++
++#include <iostream>
++#include <complex>
++
++using namespace std;
++
++class A {
++protected:
++  int a;
++  complex<double> *b;
++public:
++  A(int n);
++  inline complex<double>& operator[] (int x);
++};
++
++A::A(int n)
++{
++  a = n;
++  b = new complex<double>[a];
++  for (int i=0; i<a; i++) b[i] = complex<double>(0.0,0.0);
++}
++
++inline complex<double>& A::operator[](int x)
++{
++  if (x < 0 || x >= a)
++    cout << "x error" << endl;
++  return b[x];
++}
++
++void foo ()
++{
++  int n = 5;
++  A *o = new A(n);
++  A *p = new A(n);
++  for (int i = 0; i < n; i++) {
++    cout << i << endl;
++    (*o)[i] *= complex<double>((*p)[i].real(), (*p)[i].imag());
++  }
++}
++
++int main()
++{
++  foo();
++}

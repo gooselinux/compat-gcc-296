@@ -1,0 +1,14 @@
+--- gcc/config/ia64/frame-ia64.c.jj	2000-06-07 02:41:10.000000000 -0400
++++ gcc/config/ia64/frame-ia64.c	2003-03-28 05:37:57.000000000 -0500
+@@ -579,8 +579,11 @@ read_P_record (data, val, ptr, header)
+       int size = (header->record.r.rlen * 2 + 7) / 8;
+ 
+       data->type = spill_mask;
++#if 0
++      /* Never used; avoid leaks.  */
+       data->record.p.imask = (unsigned char *) malloc (size);
+       memcpy (data->record.p.imask, ptr, size);
++#endif
+       return ptr+size;
+     }
+ 

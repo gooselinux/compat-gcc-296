@@ -1,0 +1,68 @@
+2003-10-30  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20031030-1.c: New test.
+
+2003-05-28  Bernd Schmidt  <bernds@redhat.com>
+
+	* expr.c (store_constructor): Clear unchanging flag if target
+	is MEM or REG.
+
+--- gcc/expr.c.jj	2002-12-02 16:02:39.000000000 +0100
++++ gcc/expr.c	2003-10-30 16:37:00.000000000 +0100
+@@ -4251,6 +4251,11 @@ store_constructor (exp, target, align, c
+     }
+ #endif
+ 
++  /* We're likely to store into this multiple times.  Make sure it isn't
++     marked as unchanging.  */
++  if (target && (GET_CODE (target) == MEM || GET_CODE (target) == REG))
++    RTX_UNCHANGING_P (target) = 0;
++
+   if (TREE_CODE (type) == RECORD_TYPE || TREE_CODE (type) == UNION_TYPE
+       || TREE_CODE (type) == QUAL_UNION_TYPE)
+     {
+--- gcc/testsuite/gcc.c-torture/execute/20031030-1.c.jj	2003-09-15 15:40:47.000000000 +0200
++++ gcc/testsuite/gcc.c-torture/execute/20031030-1.c	2003-10-30 16:45:59.000000000 +0100
+@@ -0,0 +1,42 @@
++extern void abort (void);
++extern int strcmp (const char *, const char *);
++
++void
++bar (const char *x, const char *y)
++{
++  if (strcmp (y, "yes"))
++    abort ();
++}
++
++void
++baz (const char *x, const char *y)
++{
++  if (strcmp (y, "version"))
++    abort ();
++}
++
++int
++test1 (void)
++{
++  const char foo[] = {'y', 'e', 's', '\0'};
++
++  bar ("%s\n", foo);
++  return 0;
++}
++
++int
++test2 (void)
++{
++  const char foo[] = {'v', 'e', 'r', 's', 'i', 'o', 'n', '\0'};
++
++  baz ("%s\n", foo);
++  return 0;
++}
++
++int
++main (void)
++{
++  test1 ();
++  test2 ();
++  return 0;
++}

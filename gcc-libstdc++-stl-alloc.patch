@@ -1,0 +1,38 @@
+--- libstdc++/stl/stl_alloc.h.jj	Thu Dec  4 15:47:26 2003
++++ libstdc++/stl/stl_alloc.h	Thu Dec  4 16:28:53 2003
+@@ -404,7 +404,7 @@ public:
+     _Obj* __RESTRICT __result;
+ 
+     if (__n > (size_t) _MAX_BYTES) {
+-        return(malloc_alloc::allocate(__n));
++        return ::operator new(__n);
+     }
+     __my_free_list = _S_free_list + _S_freelist_index(__n);
+     // Acquire the lock here with a constructor call.
+@@ -430,7 +430,7 @@ public:
+     _Obj* __VOLATILE* __my_free_list;
+ 
+     if (__n > (size_t) _MAX_BYTES) {
+-        malloc_alloc::deallocate(__p, __n);
++        ::operator delete(__p);
+         return;
+     }
+     __my_free_list = _S_free_list + _S_freelist_index(__n);
+@@ -487,7 +487,7 @@ __default_alloc_template<__threads, __in
+             ((_Obj*)_S_start_free) -> _M_free_list_link = *__my_free_list;
+             *__my_free_list = (_Obj*)_S_start_free;
+         }
+-        _S_start_free = (char*)malloc(__bytes_to_get);
++        _S_start_free = (char*)::operator new(__bytes_to_get);
+         if (0 == _S_start_free) {
+             size_t __i;
+             _Obj* __VOLATILE* __my_free_list;
+@@ -508,7 +508,7 @@ __default_alloc_template<__threads, __in
+                 }
+             }
+ 	    _S_end_free = 0;	// In case of exception.
+-            _S_start_free = (char*)malloc_alloc::allocate(__bytes_to_get);
++            _S_start_free = (char*)::operator new(__bytes_to_get);
+             // This should either throw an
+             // exception or remedy the situation.  Thus we assume it
+             // succeeded.

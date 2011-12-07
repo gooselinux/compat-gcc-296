@@ -1,0 +1,20 @@
+2002-09-09  Jason Merrill  <jason@redhat.com>
+
+	Revert:
+	2001-02-09  Neil Booth  <neil@daikokuya.demon.co.uk>
+	* gcc.c (cpp_options): Delete .d files on error.
+
+--- gcc/gcc.c.jj	2002-09-06 19:12:51.000000000 +0200
++++ gcc/gcc.c	2002-09-11 19:43:57.000000000 +0200
+@@ -568,9 +568,8 @@ static const char *cpp_options =
+ "%{C:%{!E:%eGNU C does not support -C without using -E}}\
+  %{std*} %{nostdinc*}\
+  %{C} %{v} %{I*} %{P} %{$} %I\
+- %{MD:-M -MF %W{!o: %b.d}%W{o*:%.d%*}}\
+- %{MMD:-MM -MF %W{!o: %b.d}%W{o*:%.d%*}}\
+- %{M} %{MM} %W{MF*} %{MG} %{MP} %{MQ*} %{MT*} %{M|MD|MM|MMD:%{o*:-MQ %*}}\
++ %{MD:-M -MF %{!o: %b.d}%{o*:%.d%*}} %{MMD:-MM -MF %{!o: %b.d}%{o*:%.d%*}}\
++ %{M} %{MM} %{MF*} %{MG} %{MP} %{MQ*} %{MT*} %{M|MD|MM|MMD:%{o*:-MQ %*}}\
+  %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2 -D__GNUC_PATCHLEVEL__=%v3}\
+  %{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
+  %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\

@@ -1,0 +1,32 @@
+2001-03-29  Jakub Jelinek  <jakub@redhat.com>
+
+	* fold-const.c (fold): Before optimizing unsigned comparison with
+	0x7fffffffU, make sure arg0 is integral type.
+
+	* gcc.c-torture/execute/20010329-1.c: New test.
+
+--- gcc/fold-const.c.jj	Mon Mar 26 19:25:49 2001
++++ gcc/fold-const.c	Fri Mar 30 00:41:11 2001
+@@ -6588,8 +6588,9 @@ fold (expr) 
+ 	    else if (TREE_INT_CST_HIGH (arg1) == 0
+ 		      && (TREE_INT_CST_LOW (arg1)
+ 			  == ((unsigned HOST_WIDE_INT) 1 << (width - 1)) - 1)
+-		      && TREE_UNSIGNED (TREE_TYPE (arg1)))
+-	      
++		      && TREE_UNSIGNED (TREE_TYPE (arg1))
++			 /* signed_type does not work on pointer types.  */
++		      && INTEGRAL_TYPE_P (TREE_TYPE (arg1)))
+ 	      switch (TREE_CODE (t))
+ 		{
+ 		case LE_EXPR:
+--- gcc/testsuite/gcc.c-torture/execute/20010329-1.c.jj	Fri Mar 30 00:39:26 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010329-1.c	Fri Mar 30 00:39:26 2001
+@@ -0,0 +1,8 @@
++int main (void)
++{
++  void *x = ((void *)0x80000001);
++  if (x >= ((void *)0x80000000) && x <= ((void *)0x80000005))
++    exit (0);
++  else
++    abort ();
++}

@@ -1,0 +1,19 @@
+2001-07-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* std/complext.h (hypot): Add throw() to hypot prototype if
+	necessary.
+
+--- libstdc++/std/complext.h.jj	Sun Sep 28 21:21:47 1997
++++ libstdc++/std/complext.h	Tue Jul 17 09:55:41 2001
+@@ -311,7 +311,11 @@ operator != (_FLT x, const complex<_FLT>
+ }
+ 
+ // Some targets don't provide a prototype for hypot when -ansi.
++#if __GLIBC__ >= 2 && defined(__THROW)
++extern "C" double hypot (double, double) __THROW __attribute__ ((const));
++#else
+ extern "C" double hypot (double, double) __attribute__ ((const));
++#endif
+ 
+ template <class _FLT> inline _FLT
+ abs (const complex<_FLT>& x) __attribute__ ((const));

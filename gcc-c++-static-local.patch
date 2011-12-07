@@ -1,0 +1,734 @@
+--- gcc/cp/decl.c.jj	Wed Mar 21 15:28:41 2001
++++ gcc/cp/decl.c	Mon Mar 26 14:03:11 2001
+@@ -113,8 +113,9 @@ static tree store_bindings PARAMS ((tree
+ static tree lookup_tag_reverse PARAMS ((tree, tree));
+ static tree obscure_complex_init PARAMS ((tree, tree));
+ static tree lookup_name_real PARAMS ((tree, int, int, int));
++static void push_local_name PARAMS ((tree));
+ static void warn_extern_redeclared_static PARAMS ((tree, tree));
+-static void grok_reference_init PARAMS ((tree, tree, tree));
++static tree grok_reference_init PARAMS ((tree, tree, tree));
+ static tree grokfndecl PARAMS ((tree, tree, tree, tree, int,
+ 			      enum overload_flags, tree,
+ 			      tree, int, int, int, int, int, int, tree));
+@@ -285,6 +286,8 @@ struct named_label_use_list
+ 
+ #define named_label_uses cp_function_chain->x_named_label_uses
+ 
++#define local_names cp_function_chain->x_local_names
++
+ /* A list of objects which have constructors or destructors
+    which reside in the global scope.  The decl is stored in
+    the TREE_VALUE slot and the initializer is stored
+@@ -2818,6 +2821,41 @@ create_implicit_typedef (name, type)
+   return decl;
+ }
+ 
++/* Remember a local name for name-mangling purposes.  */
++
++static void
++push_local_name (decl)
++     tree decl;
++{
++  size_t i, nelts;
++  tree t, name;
++
++  if (!local_names)
++    VARRAY_TREE_INIT (local_names, 8, "local_names");
++
++  name = DECL_NAME (decl);
++
++  nelts = VARRAY_ACTIVE_SIZE (local_names);
++  for (i = 0; i < nelts; i++)
++    {
++      t = VARRAY_TREE (local_names, i);
++      if (DECL_NAME (t) == name)
++	{
++	  if (!DECL_LANG_SPECIFIC (decl))
++	    retrofit_lang_decl (decl);
++	  if (DECL_LANG_SPECIFIC (t))
++	    DECL_DISCRIMINATOR (decl) = DECL_DISCRIMINATOR (t) + 1;
++	  else
++	    DECL_DISCRIMINATOR (decl) = 1;
++
++	  VARRAY_TREE (local_names, i) = decl;
++	  return;
++	}
++    }
++
++  VARRAY_PUSH_TREE (local_names, decl);
++}
++
+ /* Push a tag name NAME for struct/class/union/enum type TYPE.
+    Normally put it into the inner-most non-tag-transparent scope,
+    but if GLOBALIZE is true, put it in the inner-most non-class scope.
+@@ -7417,7 +7455,7 @@ start_decl_1 (decl)
+ 
+    Quotes on semantics can be found in ARM 8.4.3.  */
+ 
+-static void
++static tree
+ grok_reference_init (decl, type, init)
+      tree decl, type, init;
+ {
+@@ -7429,16 +7467,16 @@ grok_reference_init (decl, type, init)
+ 	   || DECL_IN_AGGR_P (decl) == 0)
+ 	  && ! DECL_THIS_EXTERN (decl))
+ 	cp_error ("`%D' declared as reference but not initialized", decl);
+-      return;
++      return NULL_TREE;
+     }
+ 
+   if (init == error_mark_node)
+-    return;
++    return NULL_TREE;
+ 
+   if (TREE_CODE (init) == CONSTRUCTOR)
+     {
+       cp_error ("ISO C++ forbids use of initializer list to initialize reference `%D'", decl);
+-      return;
++      return NULL_TREE;
+     }
+ 
+   if (TREE_CODE (init) == TREE_LIST)
+@@ -7467,32 +7505,28 @@ grok_reference_init (decl, type, init)
+      decl);
+ 
+   if (tmp == error_mark_node)
+-    return;
+-  else if (tmp != NULL_TREE)
+-    {
+-      init = tmp;
+-      tmp = save_expr (tmp);
+-      if (building_stmt_tree ())
+-	{
+-	  /* Initialize the declaration.  */
+-	  tmp = build (INIT_EXPR, TREE_TYPE (decl), decl, tmp);
+-	  finish_expr_stmt (tmp);
+-	}
+-      else
+-	DECL_INITIAL (decl) = tmp;
+-    }
+-  else
++    return NULL_TREE;
++  else if (tmp == NULL_TREE)
+     {
+       cp_error ("cannot initialize `%T' from `%T'", type, TREE_TYPE (init));
+-      return;
++      return NULL_TREE;
+     }
+ 
+-  if (TREE_STATIC (decl) && ! TREE_CONSTANT (DECL_INITIAL (decl)))
++  init = tmp;
++  tmp = save_expr (tmp);
++  if (TREE_STATIC (decl) && !TREE_CONSTANT (tmp))
++    return tmp;
++
++  if (building_stmt_tree ())
+     {
+-      expand_static_init (decl, DECL_INITIAL (decl));
+-      DECL_INITIAL (decl) = NULL_TREE;
++      /* Initialize the declaration.  */
++      tmp = build (INIT_EXPR, TREE_TYPE (decl), decl, tmp);
++      finish_expr_stmt (tmp);
+     }
+-  return;
++  else
++    DECL_INITIAL (decl) = tmp;
++
++  return NULL_TREE;
+ }
+ 
+ /* Fill in DECL_INITIAL with some magical value to prevent expand_decl from
+@@ -7621,6 +7655,12 @@ layout_var_decl (decl)
+       else
+ 	cp_error ("storage size of `%D' isn't constant", decl);
+     }
++
++  if (TREE_STATIC (decl)
++      && !DECL_ARTIFICIAL (decl)
++      && current_function_decl
++      && DECL_CONTEXT (decl) == current_function_decl)
++    push_local_name (decl);
+ }
+ 
+ /* If a local static variable is declared in an inline function, or if
+@@ -7642,8 +7682,8 @@ maybe_commonize_var (decl)
+ 	  || DECL_TEMPLATE_INSTANTIATION (current_function_decl))
+       && TREE_PUBLIC (current_function_decl))
+     {
+-      /* Rather than try to get this right with inlining, we suppress
+-	 inlining of such functions.  */
++      /* In order to maintain binary compatibility accross gcc-2.96-RH series
++	 we cannot inline functions with static variables.  */
+       current_function_cannot_inline
+ 	= "function with static variable cannot be inline";
+       DECL_UNINLINABLE (current_function_decl) = 1;
+@@ -7670,13 +7710,23 @@ maybe_commonize_var (decl)
+ 
+ 	  if (TREE_PUBLIC (decl))
+ 	    DECL_ASSEMBLER_NAME (decl)
+-	      = build_static_name (current_function_decl, DECL_NAME (decl));
++	      = build_static_name (current_function_decl, decl);
+ 	  else
+ 	    {
+ 	      cp_warning_at ("sorry: semantics of inline function static data `%#D' are wrong (you'll wind up with multiple copies)", decl);
+ 	      cp_warning_at ("  you can work around this by removing the initializer", decl);
+ 	    }
+ 	}
++#ifdef ASM_FORMAT_PRIVATE2_NAME
++      else if (!flag_do_squangling && !flag_new_abi)
++	{
++	  alternate_staticlocal = 1;
++	  DECL_ASSEMBLER_NAME (decl)
++	    = build_static_name (current_function_decl, decl);
++	  alternate_staticlocal = 0;
++	  comdat_linkage (decl);
++	}
++#endif
+     }
+   else if (DECL_LANG_SPECIFIC (decl) && DECL_COMDAT (decl))
+     /* Set it up again; we might have set DECL_INITIAL since the last
+@@ -7764,10 +7814,9 @@ check_initializer (decl, init)
+     }
+   else if (!DECL_EXTERNAL (decl) && TREE_CODE (type) == REFERENCE_TYPE)
+     {
+-      if (TREE_STATIC (decl))
+-	make_decl_rtl (decl, NULL_PTR, toplevel_bindings_p ());
+-      grok_reference_init (decl, type, init);
+-      init = NULL_TREE;
++      init = grok_reference_init (decl, type, init);
++      if (init)
++	init = obscure_complex_init (decl, init);
+     }
+   else if (init)
+     {
+@@ -9102,8 +9151,7 @@ grokvardecl (type, declarator, specbits_
+ 	  if (flag_new_abi)
+ 	    DECL_ASSEMBLER_NAME (decl) = mangle_decl (decl);
+ 	  else
+-	    DECL_ASSEMBLER_NAME (decl) = build_static_name (basetype,
+-							    declarator);
++	    DECL_ASSEMBLER_NAME (decl) = build_static_name (basetype, decl);
+ 	}
+     }
+   else
+@@ -9134,7 +9182,7 @@ grokvardecl (type, declarator, specbits_
+ 	    DECL_ASSEMBLER_NAME (decl) = mangle_decl (decl);
+ 	  else
+ 	    DECL_ASSEMBLER_NAME (decl) 
+-	      = build_static_name (context, declarator);
++	      = build_static_name (context, decl);
+ 	}
+     }
+ 
+@@ -14067,6 +14115,7 @@ save_function_data (decl)
+   f->x_result_rtx = NULL_RTX;
+   f->x_named_label_uses = NULL;
+   f->bindings = NULL;
++  f->x_local_names = NULL;
+ 
+   /* When we get back here again, we will be expanding.  */
+   f->x_expanding_p = 1;
+@@ -14921,23 +14970,16 @@ pop_cp_function_context (f)
+      struct function *f;
+ {
+   if (f->language)
+-    free (f->language);
++    {
++      struct language_function *cp =
++	(struct language_function *) f->language;
++      if (cp->x_local_names)
++	VARRAY_FREE (cp->x_local_names);
++      free (f->language);
++    }
+   f->language = 0;
+ }
+ 
+-/* Mark I for GC.  */
+-
+-static void
+-mark_inlined_fns (i)
+-     struct lang_decl_inlined_fns *i;
+-{
+-  int n;
+-
+-  for (n = i->num_fns - 1; n >= 0; n--)
+-    ggc_mark_tree (i->fns [n]);
+-  ggc_set_mark (i);
+-}
+-
+ /* Mark P for GC.  */
+ 
+ static void
+@@ -14953,6 +14995,7 @@ mark_lang_function (p)
+   ggc_mark_tree (p->x_current_class_ref);
+   ggc_mark_tree (p->x_eh_spec_try_block);
+   ggc_mark_tree (p->x_scope_stmt_stack);
++  ggc_mark_tree_varray (p->x_local_names);
+ 
+   ggc_mark_rtx (p->x_result_rtx);
+ 
+@@ -15020,7 +15063,8 @@ lang_mark_tree (t)
+ 	  ggc_mark (ld);
+ 	  if (!DECL_GLOBAL_CTOR_P (t) 
+ 	      && !DECL_GLOBAL_DTOR_P (t)
+-	      && !DECL_THUNK_P (t))
++	      && !DECL_THUNK_P (t)
++	      && !DECL_DISCRIMINATOR_P (t))
+ 	    ggc_mark_tree (ld->decl_flags.u2.access);
+ 	  else if (DECL_THUNK_P (t))
+ 	    ggc_mark_tree (ld->decl_flags.u2.vcall_offset);
+@@ -15034,8 +15078,7 @@ lang_mark_tree (t)
+ 	      ggc_mark_tree (ld->befriending_classes);
+ 	      ggc_mark_tree (ld->saved_tree);
+ 	      ggc_mark_tree (ld->cloned_function);
+-	      if (ld->inlined_fns)
+-		mark_inlined_fns (ld->inlined_fns);
++	      ggc_mark_tree (ld->inlined_fns);
+ 	      if (!DECL_OVERLOADED_OPERATOR_P (t))
+ 		ggc_mark_tree (ld->u2.vtt_parm);
+ 	      if (TREE_CODE (t) == TYPE_DECL)
+--- gcc/cp/method.c.jj	Fri Mar 16 20:01:36 2001
++++ gcc/cp/method.c	Mon Mar 26 14:53:05 2001
+@@ -52,6 +52,8 @@ enum mangling_flags
+   mf_use_underscores_around_value = 2,
+ };
+ 
++int alternate_staticlocal;
++
+ typedef enum mangling_flags mangling_flags;
+ 
+ /* TREE_LIST of the current inline functions that need to be
+@@ -70,11 +72,11 @@ static void dicat PARAMS ((HOST_WIDE_INT
+ static int old_backref_index PARAMS ((tree));
+ static int flush_repeats PARAMS ((int, tree));
+ static void build_overload_identifier PARAMS ((tree));
+-static void build_overload_nested_name PARAMS ((tree));
++static void build_overload_nested_name PARAMS ((tree, tree));
+ static void mangle_expression PARAMS ((tree));
+ static void build_overload_int PARAMS ((tree, mangling_flags));
+ static void build_overload_identifier PARAMS ((tree));
+-static void build_qualified_name PARAMS ((tree));
++static void build_qualified_name PARAMS ((tree, tree));
+ static void build_overload_value PARAMS ((tree, tree, mangling_flags));
+ static void issue_nrepeats PARAMS ((int, tree));
+ static char *build_mangled_name PARAMS ((tree,int,int));
+@@ -420,15 +422,15 @@ issue_ktype (decl)
+     }
+   return FALSE;
+ }
+-  
++
+ /* Build a representation for DECL, which may be an entity not at
+    global scope.  If so, a marker indicating that the name is
+    qualified has already been output, but the qualifying context has
+    not.  */
+ 
+ static void
+-build_overload_nested_name (decl)
+-     tree decl;
++build_overload_nested_name (decl, fordecl)
++     tree decl, fordecl;
+ {
+   tree context;
+ 
+@@ -452,7 +454,7 @@ build_overload_nested_name (decl)
+     {
+       if (TYPE_P (context))
+         context = TYPE_NAME (context);
+-      build_overload_nested_name (context);
++      build_overload_nested_name (context, decl);
+     }
+   }
+ 
+@@ -463,8 +465,18 @@ build_overload_nested_name (decl)
+       tree name = DECL_ASSEMBLER_NAME (decl);
+       char *label;
+ 
+-      ASM_FORMAT_PRIVATE_NAME (label, IDENTIFIER_POINTER (name), static_labelno);
+-      static_labelno++;
++#ifdef ASM_FORMAT_PRIVATE2_NAME
++      if (alternate_staticlocal)
++	{
++	  int discr = fordecl ? discriminator_for_local_entity (fordecl) : 0;
++	  ASM_FORMAT_PRIVATE2_NAME (label, IDENTIFIER_POINTER (name), discr);
++	}
++      else
++#endif
++	{
++	  ASM_FORMAT_PRIVATE_NAME (label, IDENTIFIER_POINTER (name), static_labelno);
++	  static_labelno++;
++	}
+ 
+       if (numeric_output_need_bar)
+ 	OB_PUTC ('_');
+@@ -1041,8 +1053,8 @@ build_overload_identifier (name)
+    the mangling for it.  Used by build_mangled_name and build_static_name.  */
+ 
+ static void
+-build_qualified_name (decl)
+-     tree decl;
++build_qualified_name (decl, fordecl)
++     tree decl, fordecl;
+ {
+   tree context;
+   int i = 1;
+@@ -1086,7 +1098,7 @@ build_qualified_name (decl)
+       build_underscore_int (i);
+       numeric_output_need_bar = 0;
+     }
+-  build_overload_nested_name (decl);
++  build_overload_nested_name (decl, fordecl);
+ }
+ 
+ /* Output the mangled representation for TYPE.  If EXTRA_GCODE is
+@@ -1505,7 +1517,7 @@ process_overload_item (parmtype, extra_G
+ 
+         my_friendly_assert (TREE_CODE (name) == TYPE_DECL, 248);
+ 
+-        build_qualified_name (name);
++        build_qualified_name (name, NULL_TREE);
+         break;
+       }
+ 
+@@ -1549,7 +1561,7 @@ process_overload_item (parmtype, extra_G
+          template <class T> void foo(typename T::U)
+          
+          we have to mangle these.  */
+-      build_qualified_name (parmtype);
++      build_qualified_name (parmtype, NULL_TREE);
+       break;
+ 
+     default:
+@@ -1562,8 +1574,8 @@ process_overload_item (parmtype, extra_G
+    be either a class TYPE or a FUNCTION_DECL.  */
+ 
+ tree
+-build_static_name (context, name)
+-     tree context, name;
++build_static_name (context, decl)
++     tree context, decl;
+ {
+   /* This function is obsoleted by the new ABI.  */
+   my_friendly_assert (!flag_new_abi, 200004106);
+@@ -1573,14 +1585,14 @@ build_static_name (context, name)
+   start_squangling ();
+ #ifdef JOINER
+   OB_PUTC ('_');
+-  build_qualified_name (context);
++  build_qualified_name (context, decl);
+   OB_PUTC (JOINER);
+ #else
+   OB_PUTS ("__static_");
+-  build_qualified_name (context);
++  build_qualified_name (context, decl);
+   OB_PUTC ('_');
+ #endif
+-  OB_PUTID (name);
++  OB_PUTID (DECL_NAME (decl));
+   OB_FINISH ();
+   end_squangling ();
+ 
+@@ -1657,7 +1669,7 @@ build_decl_overload_real (decl, parms, r
+ 
+   if (!for_method && CP_DECL_CONTEXT (decl) != global_namespace)
+     /* qualify with namespace */
+-    build_qualified_name (CP_DECL_CONTEXT (decl));
++    build_qualified_name (CP_DECL_CONTEXT (decl), decl);
+ 
+   if (parms == NULL_TREE)
+     OB_PUTC ('e');
+--- gcc/cp/class.c.jj	Fri Mar 16 20:01:32 2001
++++ gcc/cp/class.c	Fri Mar 23 20:16:00 2001
+@@ -1468,6 +1468,9 @@ alter_access (t, fdecl, access)
+   if (!DECL_LANG_SPECIFIC (fdecl))
+     retrofit_lang_decl (fdecl);
+ 
++  if (DECL_DISCRIMINATOR_P (fdecl))
++    abort ();
++
+   elem = purpose_member (t, DECL_ACCESS (fdecl));
+   if (elem)
+     {
+--- gcc/cp/cp-tree.h.jj	Fri Mar 16 20:01:40 2001
++++ gcc/cp/cp-tree.h	Mon Mar 26 14:02:39 2001
+@@ -913,6 +913,7 @@ struct language_function
+   struct named_label_use_list *x_named_label_uses;
+   struct named_label_list *x_named_labels;
+   struct binding_level *bindings;
++  varray_type x_local_names;
+ 
+   const char *cannot_inline;
+ };
+@@ -1888,6 +1889,9 @@ struct lang_decl_flags
+     /* This is DECL_ACCESS.  */
+     tree access;
+ 
++    /* For VAR_DECL in function, this is DECL_DISCRIMINATOR.  */
++    int discriminator;
++
+     /* In a namespace-scope FUNCTION_DECL, this is
+        GLOBAL_INIT_PRIORITY.  */
+     int init_priority;
+@@ -1898,12 +1902,6 @@ struct lang_decl_flags
+   } u2;
+ };
+ 
+-struct lang_decl_inlined_fns
+-{
+-  size_t num_fns;
+-  tree fns[1];
+-};
+-
+ struct lang_decl
+ {
+   struct lang_decl_flags decl_flags;
+@@ -1916,8 +1914,9 @@ struct lang_decl
+   /* In a FUNCTION_DECL, this is DECL_CLONED_FUNCTION.  */
+   tree cloned_function;
+ 
+-  /* In a FUNCTION_DECL, this is a list of trees inlined into its body.  */
+-  struct lang_decl_inlined_fns *inlined_fns;
++  /* In a FUNCTION_DECL, these are function data which is to be kept
++     as long as FUNCTION_DECL is kept.  */
++  tree inlined_fns;
+ 
+   union
+   {
+@@ -2035,6 +2034,15 @@ struct lang_decl
+ #define DECL_INLINED_FNS(NODE) \
+   (DECL_LANG_SPECIFIC (NODE)->inlined_fns)
+ 
++/* Nonzero if NODE has DECL_DISCRIMINATOR and not DECL_ACCESS.  */
++#define DECL_DISCRIMINATOR_P(NODE)	\
++  (TREE_CODE (NODE) == VAR_DECL		\
++   && DECL_FUNCTION_SCOPE_P (NODE))
++
++/* Discriminator for name mangling.  */
++#define DECL_DISCRIMINATOR(NODE) \
++  (DECL_LANG_SPECIFIC (NODE)->decl_flags.u2.discriminator)
++
+ /* In a maybe-in-charge constructor or destructor, this is the VTT
+    parameter.  It's not actually on the DECL_ARGUMENTS list.  */
+ #define DECL_VTT_PARM(NODE) \
+@@ -3526,6 +3534,8 @@ struct pending_inline
+ };
+ 
+ /* in method.c */
++extern int alternate_staticlocal;
++
+ extern struct pending_inline *pending_inlines;
+ 
+ /* Negative values means we know `this' to be of static type.  */
+@@ -4663,6 +4673,7 @@ extern tree mangle_ctor_vtbl_for_type   
+ extern tree mangle_thunk                        PARAMS ((tree, tree, tree)); 
+ extern tree mangle_conv_op_name_for_type        PARAMS ((tree));
+ extern tree mangle_guard_variable               PARAMS ((tree));
++extern int discriminator_for_local_entity	PARAMS ((tree));
+ 
+ /* -- end of C++ */
+ 
+--- gcc/cp/optimize.c.jj	Fri Mar 16 20:01:40 2001
++++ gcc/cp/optimize.c	Fri Mar 23 20:16:00 2001
+@@ -618,10 +618,11 @@ inlinable_function_p (fn, id)
+ 
+       if (inlinable && DECL_LANG_SPECIFIC (fn) && DECL_INLINED_FNS (fn))
+ 	{
+-	  struct lang_decl_inlined_fns *ifn = DECL_INLINED_FNS (fn);
++	  int j;
++	  tree inlined_fns = DECL_INLINED_FNS (fn);
+ 
+-	  for (i = 0; i < ifn->num_fns; ++i)
+-	    if (ifn->fns [i] == VARRAY_TREE (id->fns, 0))
++	  for (j = 0; j < TREE_VEC_LENGTH (inlined_fns); ++j)
++	    if (TREE_VEC_ELT (inlined_fns, j) == VARRAY_TREE (id->fns, 0))
+ 	      return 0;
+ 	}
+     }
+@@ -903,14 +904,10 @@ optimize_function (fn)
+       VARRAY_FREE (id.target_exprs);
+       if (DECL_LANG_SPECIFIC (fn))
+ 	{
+-	  struct lang_decl_inlined_fns *ifn;
++	  tree ifn = make_tree_vec (VARRAY_ACTIVE_SIZE (id.inlined_fns));
+ 
+-	  ifn = ggc_alloc (sizeof (struct lang_decl_inlined_fns)
+-			   + (VARRAY_ACTIVE_SIZE (id.inlined_fns) - 1)
+-			     * sizeof (tree));
+-	  ifn->num_fns = VARRAY_ACTIVE_SIZE (id.inlined_fns);
+-	  memcpy (&ifn->fns[0], &VARRAY_TREE (id.inlined_fns, 0),
+-		  ifn->num_fns * sizeof (tree));
++	  memcpy (&TREE_VEC_ELT (ifn, 0), &VARRAY_TREE (id.inlined_fns, 0),
++		  VARRAY_ACTIVE_SIZE (id.inlined_fns) * sizeof (tree));
+ 	  DECL_INLINED_FNS (fn) = ifn;
+ 	}
+       VARRAY_FREE (id.inlined_fns);
+--- gcc/cp/mangle.c.jj	Fri Mar 16 20:01:36 2001
++++ gcc/cp/mangle.c	Mon Mar 26 13:54:26 2001
+@@ -180,7 +180,6 @@ static void write_pointer_to_member_type
+ static void write_template_param PARAMS ((tree));
+ static void write_template_template_param PARAMS ((tree));
+ static void write_substitution PARAMS ((int));
+-static int discriminator_for_local_entity PARAMS ((tree));
+ static int discriminator_for_string_literal PARAMS ((tree, tree));
+ static void write_discriminator PARAMS ((int));
+ static void write_local_name PARAMS ((tree, tree));
+@@ -1105,7 +1104,7 @@ write_special_name_destructor (dtor)
+    FUNCTION.  The discriminator is the lexical ordinal of VAR among
+    entities with the same name in the same FUNCTION.  */
+ 
+-static int
++int
+ discriminator_for_local_entity (entity)
+      tree entity;
+ {
+@@ -1115,16 +1114,17 @@ discriminator_for_local_entity (entity)
+   /* Assume this is the only local entity with this name.  */
+   discriminator = 0;
+ 
+-  /* For now, we don't discriminate amongst local variables.  */
+-  if (TREE_CODE (entity) != TYPE_DECL)
+-    return 0;
+-
+-  /* Scan the list of local classes.  */
+-  entity = TREE_TYPE (entity);
+-  for (type = &VARRAY_TREE (local_classes, 0); *type != entity; ++type)
+-    if (TYPE_IDENTIFIER (*type) == TYPE_IDENTIFIER (entity)
+-	&& TYPE_CONTEXT (*type) == TYPE_CONTEXT (entity))
+-      ++discriminator;
++  if (DECL_DISCRIMINATOR_P (entity) && DECL_LANG_SPECIFIC (entity))
++    discriminator = DECL_DISCRIMINATOR (entity);
++  else if (TREE_CODE (entity) == TYPE_DECL)
++    {
++      /* Scan the list of local classes.  */
++      entity = TREE_TYPE (entity);
++      for (type = &VARRAY_TREE (local_classes, 0); *type != entity; ++type)
++        if (TYPE_IDENTIFIER (*type) == TYPE_IDENTIFIER (entity)
++            && TYPE_CONTEXT (*type) == TYPE_CONTEXT (entity))
++	  ++discriminator;
++    }  
+ 
+   return discriminator;
+ }
+--- gcc/cp/search.c.jj	Fri Mar 16 20:01:40 2001
++++ gcc/cp/search.c	Fri Mar 23 20:16:00 2001
+@@ -848,7 +848,7 @@ dfs_access_in_type (binfo, data)
+ 	 access to the DECL.  The CONST_DECL for an enumeration
+ 	 constant will not have DECL_LANG_SPECIFIC, and thus no
+ 	 DECL_ACCESS.  */
+-      if (DECL_LANG_SPECIFIC (decl))
++      if (DECL_LANG_SPECIFIC (decl) && !DECL_DISCRIMINATOR_P (decl))
+ 	{
+ 	  tree decl_access = purpose_member (type, DECL_ACCESS (decl));
+ 	  if (decl_access)
+--- gcc/cp/decl2.c.jj	Fri Mar 16 20:01:32 2001
++++ gcc/cp/decl2.c	Fri Mar 23 20:16:00 2001
+@@ -1580,7 +1580,7 @@ finish_static_data_member_decl (decl, in
+ 	DECL_ASSEMBLER_NAME (decl) = mangle_decl (decl);
+       else
+ 	DECL_ASSEMBLER_NAME (decl) 
+-	  = build_static_name (current_class_type, DECL_NAME (decl));
++	  = build_static_name (current_class_type, decl);
+     }
+   if (! processing_template_decl)
+     {
+--- gcc/config/alpha/alpha.h.jj	Fri Mar 16 20:01:30 2001
++++ gcc/config/alpha/alpha.h	Mon Mar 26 13:46:18 2001
+@@ -2231,6 +2231,10 @@ literal_section ()						\
+ ( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 10),	\
+   sprintf ((OUTPUT), "%s.%d", (NAME), (LABELNO)))
+ 
++#define ASM_FORMAT_PRIVATE2_NAME(OUTPUT, NAME, LABELNO)	\
++( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 11),	\
++  sprintf ((OUTPUT), "%s..%d", (NAME), (LABELNO)))
++
+ /* Define the parentheses used to group arithmetic operations
+    in assembler code.  */
+ 
+--- gcc/config/i386/i386.h.jj	Fri Mar 16 20:01:40 2001
++++ gcc/config/i386/i386.h	Mon Mar 26 13:45:53 2001
+@@ -2409,6 +2409,10 @@ do { long l;						\
+ ( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 10),	\
+   sprintf ((OUTPUT), "%s.%d", (NAME), (LABELNO)))
+ 
++#define ASM_FORMAT_PRIVATE2_NAME(OUTPUT, NAME, LABELNO)	\
++( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 11),	\
++  sprintf ((OUTPUT), "%s..%d", (NAME), (LABELNO)))
++
+ /* This is how to output an assembler line defining an `int' constant.  */
+ 
+ #define ASM_OUTPUT_INT(FILE,VALUE)  \
+--- gcc/config/sparc/sparc.h.jj	Fri Mar 16 20:01:32 2001
++++ gcc/config/sparc/sparc.h	Mon Mar 26 13:47:59 2001
+@@ -3227,6 +3227,10 @@ do {									\
+ ( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 10),	\
+   sprintf ((OUTPUT), "%s.%d", (NAME), (LABELNO)))
+ 
++#define ASM_FORMAT_PRIVATE2_NAME(OUTPUT, NAME, LABELNO)	\
++( (OUTPUT) = (char *) alloca (strlen ((NAME)) + 11),	\
++  sprintf ((OUTPUT), "%s..%d", (NAME), (LABELNO)))
++
+ #define IDENT_ASM_OP ".ident"
+ 
+ /* Output #ident as a .ident.  */
+--- gcc/config/ia64/ia64.h.jj	Mon Jul 31 20:02:16 2000
++++ gcc/config/ia64/ia64.h	Mon Mar 26 13:47:33 2001
+@@ -2319,6 +2319,13 @@ do {									\
+ 	   (long)(NUMBER));						\
+ } while (0)
+ 
++#define ASM_FORMAT_PRIVATE2_NAME(OUTVAR, NAME, NUMBER)			\
++do {									\
++  (OUTVAR) = (char *) alloca (strlen (NAME) + 13);			\
++  sprintf (OUTVAR, "%s%c%c%ld", (NAME), (TARGET_GNU_AS ? '.' : '?'),	\
++	   (TARGET_GNU_AS ? '.' : '?'), (long)(NUMBER));		\
++} while (0)
++
+ /* A C statement to output to the stdio stream STREAM assembler code which
+    defines (equates) the symbol NAME to have the value VALUE.  */
+ 
+--- gcc/testsuite/g++.old-deja/g++.other/mangle11.C.jj	Fri Mar 23 18:23:24 2001
++++ gcc/testsuite/g++.old-deja/g++.other/mangle11.C	Fri Mar 23 18:23:24 2001
+@@ -0,0 +1,41 @@
++struct foo {
++  static int bar ()
++  {
++    int i;
++    static int baz = 1;
++    {
++      static int baz = 2;
++      i = baz++;
++    }
++    {
++      struct baz {
++        static int m ()
++        {
++          static int n;
++          return n += 10;
++        }
++      };
++      baz a;
++      i += a.m ();
++    }
++    {
++      static int baz = 3;
++      i += baz;
++      baz += 30;
++    }
++    i += baz;
++    baz += 60;
++    return i;
++  }
++};
++
++int main ()
++{
++  foo x;
++
++  if (x.bar () != 16)
++    return 1;
++  if (x.bar() != 117)
++    return 1;
++  return 0;
++}

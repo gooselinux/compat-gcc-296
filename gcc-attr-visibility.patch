@@ -1,0 +1,243 @@
+2002-02-27  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-common.c (enum attrs): Add A_VISIBILITY.
+	(init_attributes): Add visibility attribute.
+	(decl_attributes): Handle visibility attribute.
+	* varasm.c (assemble_visibility): New function.
+	* output.h (assemble_visibility): Add prototype.
+	* tree.h (MODULE_LOCAL_P): Define.
+	(struct tree_decl): Add module_local_flag.
+	* crtstuff.c (__dso_handle): Use visibility attribute.
+	* config/i386/i386.h (ENCODE_SECTION_INFO): Set SYMBOL_REF_FLAG
+	for MODULE_LOCAL_P symbols too.
+	* config/ia64/ia64.c (ia64_encode_section_info): Handle
+	MODULE_LOCAL_P symbols the same way as local symbols.
+	Add SDATA_NAME_FLAG_CHAR even if decl was explicitely forced
+	into .sdata/.sbss by the user.
+
+	* gcc.dg/ia64-visibility-1.c: New test.
+
+--- gcc/config/i386/i386.h.jj	Wed Feb 27 12:50:29 2002
++++ gcc/config/i386/i386.h	Wed Feb 27 21:59:21 2002
+@@ -1737,7 +1737,9 @@ do								\
+ 	    							\
+ 	    SYMBOL_REF_FLAG (XEXP (rtl, 0))			\
+ 	      = (TREE_CODE_CLASS (TREE_CODE (DECL)) != 'd'	\
+-		 || ! TREE_PUBLIC (DECL));			\
++		 || ! TREE_PUBLIC (DECL)			\
++		 || (TREE_CODE (DECL) == VAR_DECL		\
++		     && MODULE_LOCAL_P (DECL)));		\
+ 	  }							\
+       }								\
+   }								\
+--- gcc/config/ia64/ia64.c.jj	Wed Feb 27 22:12:52 2002
++++ gcc/config/ia64/ia64.c	Wed Feb 27 22:18:48 2002
+@@ -3323,13 +3323,14 @@ ia64_encode_section_info (decl)
+      statically allocated, but the space is allocated somewhere else.  Such
+      decls can not be own data.  */
+   if (! TARGET_NO_SDATA
+-      && TREE_STATIC (decl) && ! DECL_EXTERNAL (decl)
+-      && ! (DECL_ONE_ONLY (decl) || DECL_WEAK (decl))
+-      && ! (TREE_PUBLIC (decl)
+-	    && (flag_pic
+-		|| (DECL_COMMON (decl)
+-		    && (DECL_INITIAL (decl) == 0
+-			|| DECL_INITIAL (decl) == error_mark_node))))
++      && ((TREE_STATIC (decl) && ! DECL_EXTERNAL (decl)
++	   && ! (DECL_ONE_ONLY (decl) || DECL_WEAK (decl))
++	   && ! (TREE_PUBLIC (decl)
++		 && (flag_pic
++		     || (DECL_COMMON (decl)
++			 && (DECL_INITIAL (decl) == 0
++			     || DECL_INITIAL (decl) == error_mark_node)))))
++	  || MODULE_LOCAL_P (decl))
+       /* Either the variable must be declared without a section attribute,
+ 	 or the section must be sdata or sbss.  */
+       && (DECL_SECTION_NAME (decl) == 0
+@@ -3349,9 +3350,12 @@ ia64_encode_section_info (decl)
+ 	;
+ 
+       /* If this is an incomplete type with size 0, then we can't put it in
+-	 sdata because it might be too big when completed.  */
+-      else if (size > 0
+-	       && size <= (HOST_WIDE_INT) ia64_section_threshold
++	 sdata because it might be too big when completed.
++	 Objects bigger than threshold should have SDATA_NAME_FLAG_CHAR
++	 added if they are in .sdata or .sbss explicitely.  */
++      else if (((size > 0
++		 && size <= (HOST_WIDE_INT) ia64_section_threshold)
++		|| DECL_SECTION_NAME (decl))
+ 	       && symbol_str[0] != SDATA_NAME_FLAG_CHAR)
+ 	{
+ 	  size_t len = strlen (symbol_str);
+--- gcc/testsuite/gcc.dg/ia64-visibility-1.c.jj	Wed Feb 27 22:20:25 2002
++++ gcc/testsuite/gcc.dg/ia64-visibility-1.c	Tue Feb 26 12:33:26 2002
+@@ -0,0 +1,36 @@
++/* Test visibility attribute.  */
++/* { dg-do compile { target ia64*-*-linux* } } */
++/* { dg-options "-O2 -fpic" } */
++/* { dg-final { scan-assembler "\\.hidden.*variable_j" } } */
++/* { dg-final { scan-assembler "\\.hidden.*variable_m" } } */
++/* { dg-final { scan-assembler "\\.protected.*baz" } } */
++/* { dg-final { scan-assembler "gprel.*variable_i" } } */
++/* { dg-final { scan-assembler "gprel.*variable_j" } } */
++/* { dg-final { scan-assembler "ltoff.*variable_k" } } */
++/* { dg-final { scan-assembler "gprel.*variable_l" } } */
++/* { dg-final { scan-assembler "gprel.*variable_m" } } */
++/* { dg-final { scan-assembler "ltoff.*variable_n" } } */
++
++static int variable_i;
++int variable_j __attribute__((visibility ("hidden")));
++int variable_k;
++struct A { char a[64]; };
++static struct A variable_l __attribute__((section (".sbss")));
++struct A variable_m __attribute__((visibility ("hidden"), section(".sbss")));
++struct A variable_n __attribute__((section (".sbss")));
++
++int foo (void)
++{
++  return variable_i + variable_j + variable_k;
++}
++
++void bar (void)
++{
++  variable_l.a[10] = 0;
++  variable_m.a[10] = 0;
++  variable_n.a[10] = 0;
++}
++
++void __attribute__((visibility ("protected"))) baz (void)
++{
++}
+--- gcc/c-common.c.jj	Wed Feb 27 15:51:39 2002
++++ gcc/c-common.c	Wed Feb 27 18:10:00 2002
+@@ -148,7 +148,7 @@ enum attrs {A_PACKED, A_NOCOMMON, A_COMM
+ 	    A_NO_CHECK_MEMORY_USAGE, A_NO_INSTRUMENT_FUNCTION,
+ 	    A_CONSTRUCTOR, A_DESTRUCTOR, A_MODE, A_SECTION, A_ALIGNED,
+ 	    A_UNUSED, A_FORMAT, A_FORMAT_ARG, A_WEAK, A_ALIAS, A_MALLOC,
+-	    A_NO_LIMIT_STACK, A_PURE};
++	    A_NO_LIMIT_STACK, A_PURE, A_VISIBILITY};
+ 
+ enum format_type { printf_format_type, scanf_format_type,
+ 		   strftime_format_type };
+@@ -465,6 +465,7 @@ init_attributes ()
+   add_attribute (A_MALLOC, "malloc", 0, 0, 1);
+   add_attribute (A_NO_LIMIT_STACK, "no_stack_limit", 0, 0, 1);
+   add_attribute (A_PURE, "pure", 0, 0, 1);
++  add_attribute (A_VISIBILITY, "visibility", 1, 1, 1);
+ }
+ 
+ /* Default implementation of valid_lang_attribute, below.  By default, there
+@@ -1018,6 +1019,35 @@ decl_attributes (node, attributes, prefi
+ 	    warning ("`%s' attribute ignored", IDENTIFIER_POINTER (name));
+ 	  break;
+ 
++	case A_VISIBILITY:
++	  if (decl_function_context (decl) != 0 || ! TREE_PUBLIC (decl))
++	    {
++	      warning ("`%s' attribute ignored", IDENTIFIER_POINTER (name));
++	    }
++	  else
++	    {
++	      tree id;
++
++	      id = TREE_VALUE (args);
++	      if (TREE_CODE (id) != STRING_CST)
++		{
++		  error ("visibility arg not a string");
++		  break;
++		}
++
++	      if (strcmp (TREE_STRING_POINTER (id), "hidden")
++		  && strcmp (TREE_STRING_POINTER (id), "protected")
++		  && strcmp (TREE_STRING_POINTER (id), "internal"))
++		{
++		  error ("visibility arg must be one of \"hidden\", \"protected\" or \"internal\"");
++		  break;
++		}
++
++	      MODULE_LOCAL_P (decl) = 1;
++	      assemble_visibility (decl, TREE_STRING_POINTER (id));
++	    }
++	  break;
++
+ 	case A_NO_CHECK_MEMORY_USAGE:
+ 	  if (TREE_CODE (decl) != FUNCTION_DECL)
+ 	    {
+--- gcc/tree.h.jj	Thu Feb 14 22:42:43 2002
++++ gcc/tree.h	Wed Feb 27 18:09:22 2002
+@@ -1458,6 +1458,10 @@ struct tree_type
+    as "pure" function (like const function, but may read global memory).  */
+ #define DECL_IS_PURE(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.pure_flag)
+ 
++/* Nonzero if DECL will be always resolved to a symbol defined in the
++   same module (shared library or program).  */
++#define MODULE_LOCAL_P(NODE) (DECL_CHECK (NODE)->decl.module_local_flag)
++
+ /* Nonzero in a FIELD_DECL means it is a bit field, and must be accessed
+    specially.  */
+ #define DECL_BIT_FIELD(NODE) (FIELD_DECL_CHECK (NODE)->decl.bit_field_flag)
+@@ -1614,7 +1618,8 @@ struct tree_decl
+   unsigned pointer_depth : 2;
+   unsigned non_addressable : 1;
+   unsigned user_align : 1;
+-  /* Three unused bits.  */
++  unsigned module_local_flag : 1;
++  /* Two unused bits.  */
+ 
+   unsigned lang_flag_0 : 1;
+   unsigned lang_flag_1 : 1;
+--- gcc/output.h.jj	Thu Jun  1 11:56:36 2000
++++ gcc/output.h	Wed Feb 27 18:11:15 2002
+@@ -241,6 +241,8 @@ extern void assemble_constant_align	PARA
+ 
+ extern void assemble_alias		PARAMS ((tree, tree));
+ 
++extern void assemble_visibility		PARAMS ((tree, const char *));
++
+ /* Output a string of literal assembler code
+    for an `asm' keyword used between functions.  */
+ extern void assemble_asm		PARAMS ((tree));
+--- gcc/varasm.c.jj	Thu Feb 14 22:42:48 2002
++++ gcc/varasm.c	Wed Feb 27 18:14:25 2002
+@@ -4778,6 +4778,25 @@ assemble_alias (decl, target)
+ #endif
+ }
+ 
++/* Emit an assembler directive to set symbol for DECL visibility to
++   VISIBILITY_TYPE.  */
++
++void
++assemble_visibility (decl, visibility_type)
++     tree decl;
++     const char *visibility_type ATTRIBUTE_UNUSED;
++{
++  const char *name;
++
++  name = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (decl));
++
++#ifdef HAVE_GAS_HIDDEN
++  fprintf (asm_out_file, "\t.%s\t%s\n", visibility_type, name);
++#else
++  warning ("visibility attribute not supported in this configuration; ignored");
++#endif
++}
++
+ /* This determines whether or not we support link-once semantics.  */
+ #ifndef SUPPORTS_ONE_ONLY
+ #ifdef MAKE_DECL_ONE_ONLY
+--- gcc/crtstuff.c.jj	Thu Feb 14 22:42:42 2002
++++ gcc/crtstuff.c	Wed Feb 27 18:18:09 2002
+@@ -141,11 +141,8 @@ typedef void (*func_ptr) (void);
+    in one DSO or the main program is not used in another object.  The
+    dynamic linker takes care of this.  */
+ 
+-/* XXX Ideally the following should be implemented using
+-       __attribute__ ((__visibility__ ("hidden")))
+-   but the __attribute__ support is not yet there.  */
+ #ifdef HAVE_GAS_HIDDEN
+-asm (".hidden\t__dso_handle");
++extern void *__dso_handle __attribute__ ((__visibility__ ("hidden")));
+ #endif
+ 
+ #ifdef CRTSTUFFS_O

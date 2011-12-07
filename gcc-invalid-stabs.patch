@@ -1,0 +1,16 @@
+2001-07-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* dbxout.c (dbxout_symbol_location): Avoid emitting invalid register
+	numbers.
+
+--- gcc/dbxout.c.jj	Tue Jul 10 00:51:13 2001
++++ gcc/dbxout.c	Fri Jul 20 14:03:31 2001
+@@ -2129,6 +2129,8 @@ dbxout_symbol_location (decl, type, suff
+ 	{
+ 	  letter = 'r';
+ 	  current_sym_code = N_RSYM;
++	  if (REGNO (XEXP (home, 0)) >= FIRST_PSEUDO_REGISTER)
++	    return 0;
+ 	  current_sym_value = DBX_REGISTER_NUMBER (REGNO (XEXP (home, 0)));
+ 	}
+       else

@@ -1,0 +1,208 @@
+2002-09-06  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* expr.h (readonly_fields_p): Move prototype from expr.c and make
+	it external.
+	* expr.c (readonly_fields_p): Ditto.
+	* function.c (temp_slottemp_slot): Change alias_set by type.
+	(objects_must_conflict_p): New function.
+	(assign_stack_temp_for_type): Use the new function.  Use types
+	instead of alias sets.
+
+--- gcc/expr.h.jj	2000-07-27 19:46:42.000000000 +0200
++++ gcc/expr.h	2002-09-11 19:42:42.000000000 +0200
+@@ -1038,6 +1038,9 @@ extern rtx store_expr PARAMS ((tree, rtx
+ extern rtx force_operand PARAMS ((rtx, rtx));
+ 
+ #ifdef TREE_CODE
++
++extern int readonly_fields_p	PARAMS ((tree));
++
+ /* Generate code for computing expression EXP.
+    An rtx for the computed value is returned.  The value is never null.
+    In the case of a void EXP, const0_rtx is returned.  */
+--- gcc/expr.c.jj	2002-07-04 00:26:23.000000000 +0200
++++ gcc/expr.c	2002-09-11 19:42:42.000000000 +0200
+@@ -172,7 +172,6 @@ static tree init_noncopied_parts PARAMS 
+ static int safe_from_p		PARAMS ((rtx, tree, int));
+ static int fixed_type_p		PARAMS ((tree));
+ static rtx var_rtx		PARAMS ((tree));
+-static int readonly_fields_p	PARAMS ((tree));
+ static rtx expand_expr_unaligned PARAMS ((tree, unsigned int *));
+ static rtx expand_increment	PARAMS ((tree, int, int));
+ static void preexpand_calls	PARAMS ((tree));
+@@ -5713,11 +5712,11 @@ check_max_integer_computation_mode (exp)
+ #endif
+ 
+ 
+-/* Utility function used by expand_expr to see if TYPE, a RECORD_TYPE,
+-   has any readonly fields.  If any of the fields have types that
+-   contain readonly fields, return true as well.  */
++/* Utility function used to see if TYPE, a RECORD_TYPE, has any
++   readonly fields.  If any of the fields have types that contain
++   readonly fields, return true as well.  */
+ 
+-static int
++int
+ readonly_fields_p (type)
+      tree type;
+ {
+--- gcc/function.c.jj	2002-07-04 00:26:19.000000000 +0200
++++ gcc/function.c	2002-09-11 19:42:42.000000000 +0200
+@@ -194,17 +194,11 @@ struct temp_slot
+   int align;
+   /* The size, in units, of the slot.  */
+   HOST_WIDE_INT size;
+-  /* The alias set for the slot.  If the alias set is zero, we don't
+-     know anything about the alias set of the slot.  We must only
+-     reuse a slot if it is assigned an object of the same alias set.
+-     Otherwise, the rest of the compiler may assume that the new use
+-     of the slot cannot alias the old use of the slot, which is
+-     false.  If the slot has alias set zero, then we can't reuse the
+-     slot at all, since we have no idea what alias set may have been
+-     imposed on the memory.  For example, if the stack slot is the
+-     call frame for an inline functioned, we have no idea what alias
+-     sets will be assigned to various pieces of the call frame.  */
+-  HOST_WIDE_INT alias_set;
++  /* The type of the object in the slot, or zero if it doesn't correspond
++     to a type.  We use this to determine whether a slot can be reused.
++     It can be reused if objects of the type of the new slot will always
++     conflict with objects of the type of the old slot.  */
++  tree type;
+   /* The value of `sequence_rtl_expr' when this temporary is allocated.  */
+   tree rtl_expr;
+   /* Non-zero if this temporary is currently in use.  */
+@@ -246,6 +240,7 @@ struct insns_for_mem_entry {
+ 
+ static rtx assign_stack_local_1 PARAMS ((enum machine_mode, HOST_WIDE_INT,
+ 					 int, struct function *));
++static int objects_must_conflict_p PARAMS ((tree, tree));
+ static rtx assign_stack_temp_for_type PARAMS ((enum machine_mode,
+ 					       HOST_WIDE_INT, int, tree));
+ static struct temp_slot *find_temp_slot_from_address  PARAMS ((rtx));
+@@ -636,6 +631,49 @@ assign_stack_local (mode, size, align)
+   return assign_stack_local_1 (mode, size, align, cfun);
+ }
+ 
++
++/* Return 1 if any MEM object of type T1 will always conflict with any
++   MEM object of type T2.  This is used when allocating temporary
++   storage.  If T1 and/or T2 are NULL_TREE, it means we know nothing
++   about the storage.  */
++
++static int
++objects_must_conflict_p (t1, t2)
++     tree t1, t2;
++{
++  HOST_WIDE_INT set1, set2;
++
++  /* If neither has a type specified, we don't know if they'll conflict
++     because we may be using them to store objects of various types, for
++     example the argument and local variables areas of inlined functions.  */
++  if (t1 == 0 && t2 == 0)
++    return 0;
++
++  /* If one or the other has readonly fields or is readonly,
++     then they may not conflict.  */
++  if ((t1 != 0 && readonly_fields_p (t1))
++      || (t2 != 0 && readonly_fields_p (t2))
++      || (t1 != 0 && TYPE_READONLY (t1))
++      || (t2 != 0 && TYPE_READONLY (t2)))
++    return 0;
++
++  /* If they are the same type, they must conflict.  */
++  if (t1 == t2
++      /* Likewise if both are volatile.  */
++      || (t1 != 0 && TYPE_VOLATILE (t1) && t2 != 0 && TYPE_VOLATILE (t2)))
++    return 1;
++
++  /* If one is aggregate and the other is scalar then they may not
++     conflict.  */
++  if ((t1 != 0 && AGGREGATE_TYPE_P (t1))
++      != (t2 != 0 && AGGREGATE_TYPE_P (t2)))
++    return 0;
++
++  set1 = (t1 ? get_alias_set (t1) : 0);
++  set2 = (t2 ? get_alias_set (t2) : 0);
++  return (set1 == 0 || set2 == 0 || set1 == set2);
++}
++
+ /* Allocate a temporary stack slot and record it for possible later
+    reuse.
+ 
+@@ -661,7 +699,6 @@ assign_stack_temp_for_type (mode, size, 
+      tree type;
+ {
+   int align;
+-  HOST_WIDE_INT alias_set;
+   struct temp_slot *p, *best_p = 0;
+ 
+   /* If SIZE is -1 it means that somebody tried to allocate a temporary
+@@ -669,14 +706,6 @@ assign_stack_temp_for_type (mode, size, 
+   if (size == -1)
+     abort ();
+ 
+-  /* If we know the alias set for the memory that will be used, use
+-     it.  If there's no TYPE, then we don't know anything about the
+-     alias set for the memory.  */
+-  if (type)
+-    alias_set = get_alias_set (type);
+-  else 
+-    alias_set = 0;
+-
+   if (mode == BLKmode)
+     align = BIGGEST_ALIGNMENT;
+   else
+@@ -694,8 +723,7 @@ assign_stack_temp_for_type (mode, size, 
+   for (p = temp_slots; p; p = p->next)
+     if (p->align >= align && p->size >= size && GET_MODE (p->slot) == mode
+ 	&& ! p->in_use
+-	&& (! flag_strict_aliasing
+-	    || (alias_set && p->alias_set == alias_set))
++	&& objects_must_conflict_p (type, p->type)
+ 	&& (best_p == 0 || best_p->size > p->size
+ 	    || (best_p->size == p->size && best_p->align > p->align)))
+       {
+@@ -721,7 +749,7 @@ assign_stack_temp_for_type (mode, size, 
+ 	  if (best_p->size - rounded_size >= alignment)
+ 	    {
+ 	      p = (struct temp_slot *) xmalloc (sizeof (struct temp_slot));
+-	      p->in_use = p->addr_taken = 0;
++	      p->in_use = p->keep = p->addr_taken = 0;
+ 	      p->size = best_p->size - rounded_size;
+ 	      p->base_offset = best_p->base_offset + rounded_size;
+ 	      p->full_size = best_p->full_size - rounded_size;
+@@ -731,7 +759,7 @@ assign_stack_temp_for_type (mode, size, 
+ 	      p->align = best_p->align;
+ 	      p->address = 0;
+ 	      p->rtl_expr = 0;
+-	      p->alias_set = best_p->alias_set;
++	      p->type = best_p->type;
+ 	      p->next = temp_slots;
+ 	      temp_slots = p;
+ 
+@@ -742,7 +770,6 @@ assign_stack_temp_for_type (mode, size, 
+ 	      best_p->full_size = rounded_size;
+ 	    }
+ 	}
+-
+       p = best_p;
+     }
+ 	      
+@@ -769,7 +796,7 @@ assign_stack_temp_for_type (mode, size, 
+ 				    align);
+ 
+       p->align = align;
+-      p->alias_set = alias_set;
++      p->type = type;
+ 
+       /* The following slot size computation is necessary because we don't
+ 	 know the actual size of the temporary slot until assign_stack_local
+@@ -822,7 +849,7 @@ assign_stack_temp_for_type (mode, size, 
+   RTX_UNCHANGING_P (p->slot) = 0;
+   MEM_IN_STRUCT_P (p->slot) = 0;
+   MEM_SCALAR_P (p->slot) = 0;
+-  MEM_ALIAS_SET (p->slot) = alias_set;
++  MEM_ALIAS_SET (p->slot) = type ? get_alias_set (type) : 0;
+ 
+   if (type != 0)
+     MEM_SET_IN_STRUCT_P (p->slot, AGGREGATE_TYPE_P (type));

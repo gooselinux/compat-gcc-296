@@ -1,0 +1,91 @@
+2001-01-02  Jason Merrill  <jason@redhat.com>
+
+	* call.c (build_new_method_call): Do evaluate the object parameter
+	when accessing a static member.
+	* typeck.c (build_component_ref): Likewise.
+
+	* g++.old-deja/g++.martin/eval1.C: Remove XFAIL.
+	* g++.old-deja/g++.other/static16.C: New test.
+
+--- gcc/cp/call.c.jj	2000/12/22 16:44:22	1.244
++++ gcc/cp/call.c	2001/01/02 15:20:29	1.245
+@@ -4278,6 +4278,7 @@ build_new_method_call (instance, name, a
+   tree pretty_name;
+   tree user_args;
+   tree templates = NULL_TREE;
++  tree call;
+   int template_only = 0;
+ 
+   if (TREE_CODE (name) == TEMPLATE_ID_EXPR)
+@@ -4492,10 +4493,18 @@ build_new_method_call (instance, name, a
+ 	  || resolves_to_fixed_type_p (instance, 0)))
+     flags |= LOOKUP_NONVIRTUAL;
+ 
+-  return build_over_call
+-    (cand,
+-     TREE_CODE (TREE_TYPE (cand->fn)) == METHOD_TYPE ? mem_args : args,
+-     flags);
++  if (TREE_CODE (TREE_TYPE (cand->fn)) == METHOD_TYPE)
++    call = build_over_call (cand, mem_args, flags);
++  else
++    {
++      call = build_over_call (cand, args, flags);
++      /* Do evaluate the object parameter in a call to a static member
++	 function.  */
++      if (TREE_SIDE_EFFECTS (instance))
++	call = build (COMPOUND_EXPR, TREE_TYPE (call), instance, call);
++    }
++
++  return call;
+ }
+ 
+ /* Returns non-zero iff standard conversion sequence ICS1 is a proper
+--- gcc/cp/typeck.c.jj	2000/12/22 23:31:55	1.329
++++ gcc/cp/typeck.c	2001/01/02 19:48:02	1.331
+@@ -2208,6 +2208,11 @@ build_component_ref (datum, component, b
+ 	    mark_used (field);
+ 	  else
+ 	    TREE_USED (field) = 1;
++
++	  /* Do evaluate the object when accessing a static member.  */
++	  if (TREE_SIDE_EFFECTS (datum))
++	    field = build (COMPOUND_EXPR, TREE_TYPE (field), datum, field);
++
+ 	  return field;
+ 	}
+     }
+--- gcc/testsuite/g++.old-deja/g++.martin/eval1.C.jj	Sat Sep  4 17:09:02 1999
++++ gcc/testsuite/g++.old-deja/g++.martin/eval1.C	Wed Feb 27 14:50:10 2002
+@@ -1,5 +1,4 @@
+ // Postfix expression must be evaluated even if accessing a static member.
+-// execution test - XFAIL *-*-*
+ 
+ struct S
+ {
+--- gcc/testsuite/g++.old-deja/g++.other/static16.C.jj	Wed Feb 27 14:55:51 2002
++++ gcc/testsuite/g++.old-deja/g++.other/static16.C	Tue Jan  2 16:20:30 2001
+@@ -0,0 +1,24 @@
++// Test that we properly evaluate the object parameter when accessing static
++// members.
++
++struct A {
++  static void f () {}
++  static int i;
++};
++
++int A::i;
++
++int c = 0;
++
++A g ()
++{
++  ++c;
++  return A();
++}
++
++int main ()
++{
++  g().f();
++  g().i = 42;
++  return (c != 2);
++}

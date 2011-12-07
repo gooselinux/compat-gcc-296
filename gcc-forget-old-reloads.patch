@@ -1,0 +1,59 @@
+2000-09-18  Bernd Schmidt  <bernds@redhat.co.uk>
+
+	* reload1.c (forget_old_reloads_1): If a hard reg is stored, clear
+	its entry in spill_reg_store.
+
+2004-03-02  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20040302-1.c: New test.
+
+--- gcc/reload1.c.jj	2004-02-29 21:22:51.000000000 +0100
++++ gcc/reload1.c	2004-03-02 16:14:56.000000000 +0100
+@@ -4058,7 +4058,10 @@ forget_old_reloads_1 (x, ignored, data)
+ 	   reload reg in the current instruction.  */
+ 	if (n_reloads == 0
+ 	    || ! TEST_HARD_REG_BIT (reg_is_output_reload, regno + i))
+-	  CLEAR_HARD_REG_BIT (reg_reloaded_valid, regno + i);
++	  {
++	    CLEAR_HARD_REG_BIT (reg_reloaded_valid, regno + i);
++	    spill_reg_store[regno + i] = 0;
++	  }
+     }
+ 
+   /* Since value of X has changed,
+--- gcc/testsuite/gcc.c-torture/execute/20040302-1.c.jj	2004-03-02 16:22:52.000000000 +0100
++++ gcc/testsuite/gcc.c-torture/execute/20040302-1.c	2004-02-29 21:52:00.000000000 +0100
+@@ -0,0 +1,33 @@
++extern void abort (void);
++
++void
++foo (const char *a)
++{
++}
++
++void
++bar (const char *f, int a, int b, int c)
++{
++  if (a != 2 || b != 7 || c != 1999)
++    abort ();
++}
++
++typedef struct
++{
++  unsigned char a, b, c, d, e;
++} T;
++
++T t = { b : 2, c : 7, d : 0x99, e : 0x19 };
++
++int
++main (void)
++{
++  T *p = &t;
++  foo ("foo");
++  bar ("bar",
++       (p->b >> 4) * 10 + (p->b & 0xf),
++       (p->c >> 4) * 10 + (p->c & 0xf),
++       (p->e >> 4) * 1000 + (p->e & 0xf) * 100
++       + (p->d >> 4) * 10 + (p->d & 0xf));
++  return 0;
++}

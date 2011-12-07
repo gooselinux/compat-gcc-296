@@ -1,0 +1,56 @@
+2000-11-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* expr.c (do_compare_and_jump): If op0 was replaced by promoted
+	integer constant, use type of op1 for comparison.
+
+	* g++.old-deja/g++.other/inline17.C: New test.
+
+--- gcc/expr.c.jj	Tue Nov 14 11:40:28 2000
++++ gcc/expr.c	Mon Nov 20 23:49:25 2000
+@@ -10054,8 +10054,21 @@ do_compare_and_jump (exp, signed_code, u
+     return;
+ 
+   op1 = expand_expr_unaligned (TREE_OPERAND (exp, 1), &align1);
++  if (TREE_CODE (TREE_OPERAND (exp, 1)) == ERROR_MARK)
++    return;
++
+   type = TREE_TYPE (TREE_OPERAND (exp, 0));
+   mode = TYPE_MODE (type);
++  if (TREE_CODE (TREE_OPERAND (exp, 0)) == INTEGER_CST
++      && (TREE_CODE (TREE_OPERAND (exp, 1)) != INTEGER_CST
++	  || (GET_MODE_BITSIZE (mode)
++	      > GET_MODE_BITSIZE (TREE_TYPE (TREE_OPERAND (exp, 1))))))
++    {
++      /* op0 might have been replaced by promoted constant, in which
++	 case the type of second argument should be used.  */
++      type = TREE_TYPE (TREE_OPERAND (exp, 1));
++      mode = TYPE_MODE (type);
++    }
+   unsignedp = TREE_UNSIGNED (type);
+   code = unsignedp ? unsigned_code : signed_code;
+ 
+--- gcc/testsuite/g++.old-deja/g++.other/inline17.C.jj	Mon Nov 20 18:42:28 2000
++++ gcc/testsuite/g++.old-deja/g++.other/inline17.C	Mon Nov 20 18:42:35 2000
+@@ -0,0 +1,22 @@
++// Build don't link:
++// Origin: Jakub Jelinek <jakub@redhat.com>
++// Special g++ Options: -O3
++
++struct foo
++{
++  char a;
++  foo ();
++  void bar ();
++  void baz (char c);
++};
++
++void foo::baz (char c)
++{
++  if (c != a)
++    a = c;
++}
++
++void foo::bar ()
++{
++  baz (1);
++}

@@ -1,0 +1,50 @@
+2001-04-10  Richard Henderson  <rth@redhat.com>
+
+	* typeck.c (build_array_ref): Push the array reference inside
+	COMPOUND_EXPR and COND_EXPR.
+
+	* g++.old-deja/g++.other/array5.C: New.
+
+--- gcc/cp/typeck.c.jj	2001/03/06 20:45:05	1.342
++++ gcc/cp/typeck.c	2001/04/10 16:49:29	1.343
+@@ -2433,6 +2433,27 @@ build_array_ref (array, idx)
+       || TREE_TYPE (idx) == error_mark_node)
+     return error_mark_node;
+ 
++  /* If ARRAY is a COMPOUND_EXPR or COND_EXPR, move our reference
++     inside it.  */
++  switch (TREE_CODE (array))
++    {
++    case COMPOUND_EXPR:
++      {
++	tree value = build_array_ref (TREE_OPERAND (array, 1), idx);
++	return build (COMPOUND_EXPR, TREE_TYPE (value),
++		      TREE_OPERAND (array, 0), value);
++      }
++
++    case COND_EXPR:
++      return build_conditional_expr
++	(TREE_OPERAND (array, 0),
++	 build_array_ref (TREE_OPERAND (array, 1), idx),
++	 build_array_ref (TREE_OPERAND (array, 2), idx));
++
++    default:
++      break;
++    }
++
+   if (TREE_CODE (TREE_TYPE (array)) == ARRAY_TYPE
+       && TREE_CODE (array) != INDIRECT_REF)
+     {
+--- gcc/testsuite/g++.old-deja/g++.other/array5.C.jj	Wed Feb 27 14:22:43 2002
++++ gcc/testsuite/g++.old-deja/g++.other/array5.C	Wed Apr 11 00:22:06 2001
+@@ -0,0 +1,10 @@
++// Build don't link:
++// We tried to create a temporary of unknown size and crashed.
++
++extern int a1[];
++extern int a2[];
++int foo(int p)
++{
++  int x = (p ? a1 : a2)[1];
++  return x;
++}

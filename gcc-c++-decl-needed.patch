@@ -1,0 +1,35 @@
+2000-08-02  Mark Mitchell  <mark@codesourcery.com>
+
+	* cp-tree.h (DECL_NEEDED_P): Tweak.
+
+2001-01-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* g++.old-deja/g++.other/static20.C: New test.
+
+--- gcc/cp/cp-tree.h.jj	Mon Jul 31 20:02:19 2000
++++ gcc/cp/cp-tree.h	Thu Jan 18 18:25:48 2001
+@@ -1936,7 +1936,7 @@ struct lang_decl
+    anything that isn't comdat, but we don't know for sure whether or
+    not something is comdat until end-of-file.  */
+ #define DECL_NEEDED_P(DECL)					\
+-  ((at_eof && !DECL_COMDAT (DECL))				\
++  ((at_eof && TREE_PUBLIC (DECL) && !DECL_COMDAT (DECL))	\
+    || (TREE_SYMBOL_REFERENCED (DECL_ASSEMBLER_NAME ((DECL))))	\
+    || (flag_syntax_only && TREE_USED ((DECL))))
+ 
+--- gcc/testsuite/g++.old-deja/g++.other/static20.C.jj	Thu Aug 24 11:00:32 2000
++++ gcc/testsuite/g++.old-deja/g++.other/static20.C	Thu Jan 18 18:33:43 2001
+@@ -0,0 +1,13 @@
++// Build don't run:
++struct foo
++{
++  foo() {};
++  ~foo() {};
++  void func() { static foo x; };
++};
++
++int main()
++{
++   foo f;
++   return 0;
++}

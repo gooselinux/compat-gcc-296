@@ -1,0 +1,15 @@
+2001-06-02  Toon Moene  <toon@moene.indiv.nluug.nl>
+
+	* com.c (ffecom_init_0): Make CHARACTER*1 unsigned.
+
+--- gcc/f/com.c.jj	Wed May  9 20:56:54 2001
++++ gcc/f/com.c	Tue Jun  5 09:57:57 2001
+@@ -11580,6 +11580,8 @@ ffecom_init_0 ()
+   /* Define `int' and `char' first so that dbx will output them first.  */
+   pushdecl (build_decl (TYPE_DECL, get_identifier ("int"),
+ 			integer_type_node));
++  /* CHARACTER*1 is unsigned in ICHAR contexts.  */
++  char_type_node = make_unsigned_type (CHAR_TYPE_SIZE);
+   pushdecl (build_decl (TYPE_DECL, get_identifier ("char"),
+ 			char_type_node));
+   pushdecl (build_decl (TYPE_DECL, get_identifier ("long int"),

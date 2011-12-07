@@ -1,0 +1,37 @@
+2001-02-21  David Mosberger  <davidm@hpl.hp.com>
+
+	* config/ia64/ia64.c (ia64_epilogue_uses): For syscall_linkage
+	functions, drop current_function_args_info.words test.
+	(ia64_compute_frame_size): Mark syscall_linkage functions as
+	using eight input registers.
+
+--- gcc/config/ia64/ia64.c.jj	Fri Nov 17 14:07:34 2000
++++ gcc/config/ia64/ia64.c	Wed Feb 21 14:14:47 2001
+@@ -1183,7 +1183,13 @@
+       break;
+   current_frame_info.n_local_regs = regno - LOC_REG (0) + 1;
+ 
+-  if (cfun->machine->n_varargs > 0)
++  /* For functions marked with the syscall_linkage attribute, we must mark
++     all eight input registers as in use, so that locals aren't visible to
++     the caller.  */
++
++  if (cfun->machine->n_varargs > 0
++      || lookup_attribute ("syscall_linkage",
++			   TYPE_ATTRIBUTES (TREE_TYPE (current_function_decl))))
+     current_frame_info.n_input_regs = 8;
+   else
+     {
+@@ -4468,10 +4474,10 @@
+      registers are marked as live at all function exits.  This prevents the
+      register allocator from using the input registers, which in turn makes it
+      possible to restart a system call after an interrupt without having to
+-     save/restore the input registers.  */
++     save/restore the input registers.  This also prevents kernel data from
++     leaking to application code.  */
+ 
+   if (IN_REGNO_P (regno)
+-      && (regno < IN_REG (current_function_args_info.words))
+       && lookup_attribute ("syscall_linkage",
+ 			   TYPE_ATTRIBUTES (TREE_TYPE (current_function_decl))))
+     return 1;

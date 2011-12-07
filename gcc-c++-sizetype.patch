@@ -1,0 +1,115 @@
+2000-10-22  Mark Mitchell  <mark@codesourcery.com>
+
+	* tree.h (TYPE_IS_SIZETYPE): Add more documentation.
+
+2000-10-22  Mark Mitchell  <mark@codesourcery.com>
+
+	* typeck.c (c_sizeof): Return an expression of `size_t' type, 
+	not one with TYPE_IS_SIZETYPE set.
+	(dubious_conversion_warnings): Remove special-case code.
+
+2000-10-09  Joseph S. Myers  <jsm28@cam.ac.uk>
+
+        * decl.c (init_decl_processing): Create c_size_type_node type.
+
+2000-08-26  Joseph S. Myers  <jsm28@cam.ac.uk>
+
+	* c-common.h (enum c_tree_index): Add CTI_C_SIZE_TYPE.
+	(c_size_type_node): Define.
+	* c-decl.c (init_decl_processing): Initialize c_size_type_node.
+
+--- gcc/cp/decl.c.jj	Tue Nov  7 00:32:28 2000
++++ gcc/cp/decl.c	Wed Nov  8 17:56:19 2000
+@@ -6393,8 +6393,9 @@ init_decl_processing ()
+   /* `unsigned long' is the standard type for sizeof.
+      Note that stddef.h uses `unsigned long',
+      and this must agree, even if long and int are the same size.  */
+-  set_sizetype
+-    (TREE_TYPE (IDENTIFIER_GLOBAL_VALUE (get_identifier (SIZE_TYPE))));
++  c_size_type_node =
++    TREE_TYPE (IDENTIFIER_GLOBAL_VALUE (get_identifier (SIZE_TYPE)));
++  set_sizetype (c_size_type_node);
+ 
+   /* Create the widest literal types. */
+   widest_integer_literal_type_node = make_signed_type (HOST_BITS_PER_WIDE_INT * 2);
+--- gcc/cp/typeck.c.jj	Tue Nov  7 00:32:26 2000
++++ gcc/cp/typeck.c	Wed Nov  8 17:52:22 2000
+@@ -1546,6 +1546,7 @@ c_sizeof (type)
+      tree type;
+ {
+   enum tree_code code = TREE_CODE (type);
++  tree size;
+ 
+   if (processing_template_decl)
+     return build_min (SIZEOF_EXPR, sizetype, type);
+@@ -1589,10 +1590,19 @@ c_sizeof (type)
+     }
+ 
+   /* Convert in case a char is more than one unit.  */
+-  return size_binop (CEIL_DIV_EXPR, TYPE_SIZE_UNIT (type),
++  size = size_binop (CEIL_DIV_EXPR, TYPE_SIZE_UNIT (type),
+ 		     size_int (TYPE_PRECISION (char_type_node)
+ 			       / BITS_PER_UNIT));
++  /* SIZE will have an integer type with TYPE_IS_SIZETYPE set.
++     TYPE_IS_SIZETYPE means that certain things (like overflow) will
++     never happen.  However, this node should really have type
++     `size_t', which is just a typedef for an ordinary integer type.  */
++  size = fold (build1 (NOP_EXPR, c_size_type_node, size));
++  my_friendly_assert (!TYPE_IS_SIZETYPE (TREE_TYPE (size)), 
++		      20001021);
++  return size;
+ }
++
+ 
+ tree
+ expr_sizeof (e)
+--- gcc/c-common.h.jj	Tue Nov  7 00:32:19 2000
++++ gcc/c-common.h	Wed Nov  8 18:00:36 2000
+@@ -92,6 +92,7 @@ enum c_tree_index
+     CTI_SIGNED_WCHAR_TYPE,
+     CTI_UNSIGNED_WCHAR_TYPE,
+     CTI_WINT_TYPE,
++    CTI_C_SIZE_TYPE, /* For format checking only.  */
+     CTI_SIGNED_SIZE_TYPE, /* For format checking only.  */
+     CTI_UNSIGNED_PTRDIFF_TYPE, /* For format checking only.  */
+     CTI_WIDEST_INT_LIT_TYPE,
+@@ -126,6 +127,7 @@ enum c_tree_index
+ #define signed_wchar_type_node		c_global_trees[CTI_SIGNED_WCHAR_TYPE]
+ #define unsigned_wchar_type_node	c_global_trees[CTI_UNSIGNED_WCHAR_TYPE]
+ #define wint_type_node			c_global_trees[CTI_WINT_TYPE]
++#define c_size_type_node		c_global_trees[CTI_C_SIZE_TYPE]
+ #define signed_size_type_node		c_global_trees[CTI_SIGNED_SIZE_TYPE]
+ #define unsigned_ptrdiff_type_node	c_global_trees[CTI_UNSIGNED_PTRDIFF_TYPE]
+ #define widest_integer_literal_type_node c_global_trees[CTI_WIDEST_INT_LIT_TYPE]
+--- gcc/tree.h.jj	Thu Jul 27 19:46:45 2000
++++ gcc/tree.h	Thu Jul 27 19:46:45 2000
+@@ -951,9 +951,14 @@ struct tree_block
+    its size.  */
+ #define TYPE_NO_FORCE_BLK(NODE) (TYPE_CHECK (NODE)->type.no_force_blk_flag)
+ 
+-/* In an INTEGER_TYPE, it means the type represents a size.  We use this
+-   both for validity checking and to permit optimziations that are unsafe
+-   for other types.  */
++/* In an INTEGER_TYPE, it means the type represents a size.  We use
++   this both for validity checking and to permit optimizations that
++   are unsafe for other types.  Note that the C `size_t' type should
++   *not* have this flag set.  The `size_t' type is simply a typedef
++   for an ordinary integer type that happens to be the type of an
++   expression returned by `sizeof'; `size_t' has no special
++   properties.  Expressions whose type have TYPE_IS_SIZETYPE set are
++   always actual sizes.  */
+ #define TYPE_IS_SIZETYPE(NODE) (TYPE_CHECK (NODE)->type.no_force_blk_flag)
+ 
+ /* Nonzero in a type considered volatile as a whole.  */
+--- gcc/c-decl.c.jj	Tue Nov  7 00:32:27 2000
++++ gcc/c-decl.c	Wed Nov  8 17:54:29 2000
+@@ -3015,7 +3015,8 @@ init_decl_processing ()
+   signed_size_type_node = signed_type (t);
+   if (flag_traditional && TREE_UNSIGNED (t))
+     t = signed_type (t);
+-    
++
++  c_size_type_node = t;
+   set_sizetype (t);
+ 
+   /* Create the widest literal types. */

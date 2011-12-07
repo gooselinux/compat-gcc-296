@@ -1,0 +1,50 @@
+2002-03-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-decl.c (duplicate_decls): Handle DECL_VISIBILITY.
+
+	* decl.c (duplicate_decls): Handle DECL_VISIBILITY.
+
+--- gcc/cp/decl.c.jj	Wed Mar  6 17:58:22 2002
++++ gcc/cp/decl.c	Mon Mar 11 11:51:26 2002
+@@ -3550,6 +3550,8 @@ duplicate_decls (newdecl, olddecl)
+      except for any that we copy here from the old type.  */
+   DECL_MACHINE_ATTRIBUTES (newdecl)
+     = merge_machine_decl_attributes (olddecl, newdecl);
++  if (! DECL_VISIBILITY (newdecl))
++    DECL_VISIBILITY (newdecl) = DECL_VISIBILITY (olddecl);
+ 
+   if (TREE_CODE (newdecl) == TEMPLATE_DECL)
+     {
+@@ -3846,6 +3848,7 @@ duplicate_decls (newdecl, olddecl)
+   /* NEWDECL contains the merged attribute lists.
+      Update OLDDECL to be the same.  */
+   DECL_MACHINE_ATTRIBUTES (olddecl) = DECL_MACHINE_ATTRIBUTES (newdecl);
++  DECL_VISIBILITY (olddecl) = DECL_VISIBILITY (newdecl);
+ 
+   return 1;
+ }
+--- gcc/c-decl.c.jj	Wed Mar  6 17:58:12 2002
++++ gcc/c-decl.c	Mon Mar 11 11:54:29 2002
+@@ -1426,8 +1426,12 @@ duplicate_decls (newdecl, olddecl, diffe
+   int errmsg = 0;
+ 
+   if (DECL_P (olddecl))
+-    DECL_MACHINE_ATTRIBUTES (newdecl)
+-      =  merge_machine_decl_attributes (olddecl, newdecl);
++    {
++      DECL_MACHINE_ATTRIBUTES (newdecl)
++	=  merge_machine_decl_attributes (olddecl, newdecl);
++      if (! DECL_VISIBILITY (newdecl))
++	DECL_VISIBILITY (newdecl) = DECL_VISIBILITY (olddecl);
++    }
+ 
+   if (TREE_CODE (newtype) == ERROR_MARK
+       || TREE_CODE (oldtype) == ERROR_MARK)
+@@ -2034,6 +2038,7 @@ duplicate_decls (newdecl, olddecl, diffe
+   /* NEWDECL contains the merged attribute lists.
+      Update OLDDECL to be the same.  */
+   DECL_MACHINE_ATTRIBUTES (olddecl) = DECL_MACHINE_ATTRIBUTES (newdecl);
++  DECL_VISIBILITY (olddecl) = DECL_VISIBILITY (newdecl);
+ 
+   return 1;
+ }

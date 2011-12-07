@@ -1,0 +1,45 @@
+Mon Jul 31 22:19:24 2000  Jeffrey A Law  (law@cygnus.com)
+
+        * loop.c (check_dbra_loop): Make change from July 17, 2000 work
+        on targets which need more than one insn for a compare/cbranch
+        operation.
+
+	* gcc-c-torture/execute/20000731-2.c: New test.
+
+--- gcc/loop.c.jj	2000/07/30 23:57:55	1.263
++++ gcc/loop.c	2000/08/01 04:19:47	1.264
+@@ -7788,10 +7788,13 @@ check_dbra_loop (loop, insn_count)
+   {
+     /* If more than one condition is present to control the loop, then
+        do not proceed, as this function does not know how to rewrite
+-       loop tests with more than one condition.  */
++       loop tests with more than one condition.
+ 
++       Look backwards from the first insn in the last comparison
++       sequence and see if we've got another comparison sequence.  */
++
+     rtx jump1;
+-    if ((jump1 = prev_nonnote_insn (jump)) != loop->cont)
++    if ((jump1 = prev_nonnote_insn (first_compare)) != loop->cont)
+       if (GET_CODE (jump1) == JUMP_INSN)
+         return 0;
+   }
+--- gcc/testsuite/gcc.c-torture/execute/20000731-2.c.jj	Wed Feb 27 16:17:47 2002
++++ gcc/testsuite/gcc.c-torture/execute/20000731-2.c	Tue Aug  1 06:11:57 2000
+@@ -0,0 +1,16 @@
++int
++main()
++{
++    int i = 1;
++    int j = 0;
++
++    while (i != 1024 || j <= 0) {
++        i *= 2;
++        ++ j;
++    }
++
++    if (j != 10)
++      abort ();
++
++    exit (0);
++}

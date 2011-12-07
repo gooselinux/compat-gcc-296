@@ -1,0 +1,15 @@
+Tue Aug 29 22:09:59 2000  Richard Kenner  <kenner@vlsi1.ultra.nyu.edu>
+
+	* expr.c (expand_expr): Don't blow up if type is ERROR_MARK.
+
+--- gcc/expr.c.jj	Thu Feb 22 16:14:19 2001
++++ gcc/expr.c	Thu Feb 22 17:58:23 2001
+@@ -5772,7 +5772,7 @@ expand_expr (exp, target, tmode, modifie
+   enum expand_modifier ro_modifier;
+ 
+   /* Handle ERROR_MARK before anybody tries to access its type. */
+-  if (TREE_CODE (exp) == ERROR_MARK)
++  if (TREE_CODE (exp) == ERROR_MARK || TREE_CODE (type) == ERROR_MARK)
+     {
+       op0 = CONST0_RTX (tmode);
+       if (op0 != 0)

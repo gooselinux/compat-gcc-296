@@ -1,0 +1,36 @@
+2000-11-27  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.md (truncxfsf2_2): Fix predicate.
+
+	* gcc.dg/20001127-1.c: New test.
+
+--- gcc/config/i386/i386.md.jj	Mon Nov 27 13:58:30 2000
++++ gcc/config/i386/i386.md	Mon Nov 27 17:54:29 2000
+@@ -3286,7 +3286,7 @@
+    (set_attr "mode" "SF")])
+ 
+ (define_insn "*truncxfsf2_2"
+-  [(set (match_operand:SF 0 "nonimmediate_operand" "=m")
++  [(set (match_operand:SF 0 "memory_operand" "=m")
+ 	(float_truncate:SF
+ 	 (match_operand:XF 1 "register_operand" "f")))]
+   "TARGET_80387"
+--- gcc/testsuite/gcc.dg/20001127-1.c.jj	Mon Nov 27 18:01:22 2000
++++ gcc/testsuite/gcc.dg/20001127-1.c	Mon Nov 27 18:04:18 2000
+@@ -0,0 +1,16 @@
++/* { dg-do compile { target i?86-*-* } } */
++/* { dg-options "-O2" } */
++
++extern inline float bar (float x)
++{
++  register long double value;
++  asm volatile ("frndint" : "=t" (value) : "0" (x));
++  return value;
++}
++
++float a;
++
++float foo (float b)
++{
++  return a + bar (b);
++}

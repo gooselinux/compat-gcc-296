@@ -1,0 +1,47 @@
+2001-01-11  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* typeck.c (build_c_cast): Do template processing earlier.
+
+2001-08-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* g++.old-deja/g++.other/array3.C: New test.
+
+--- gcc/cp/typeck.c.jj	Wed Aug  8 18:37:25 2001
++++ gcc/cp/typeck.c	Thu Aug  9 16:34:32 2001
+@@ -5361,6 +5361,13 @@ build_c_cast (type, expr)
+   if (type == error_mark_node || expr == error_mark_node)
+     return error_mark_node;
+ 
++  if (processing_template_decl)
++    {
++      tree t = build_min (CAST_EXPR, type,
++			  tree_cons (NULL_TREE, value, NULL_TREE));
++      return t;
++    }
++
+   /* build_c_cast puts on a NOP_EXPR to make the result not an lvalue.
+      Strip such NOP_EXPRs if VALUE is being used in non-lvalue context.  */
+   if (TREE_CODE (type) != REFERENCE_TYPE
+@@ -5393,13 +5400,6 @@ build_c_cast (type, expr)
+     {
+       cp_error ("invalid cast to function type `%T'", type);
+       return error_mark_node;
+-    }
+-
+-  if (processing_template_decl)
+-    {
+-      tree t = build_min (CAST_EXPR, type,
+-			  tree_cons (NULL_TREE, value, NULL_TREE));
+-      return t;
+     }
+ 
+   if (TREE_CODE (type) == VOID_TYPE)
+--- gcc/testsuite/g++.old-deja/g++.other/array3.C.jj	Thu Aug  9 16:39:26 2001
++++ gcc/testsuite/g++.old-deja/g++.other/array3.C	Thu Aug  9 16:40:13 2001
+@@ -0,0 +1,6 @@
++// Build don't link:
++
++template <class T> class A {
++  T *d;
++  public: void f() { (T[10])d; }
++};

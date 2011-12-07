@@ -1,0 +1,36 @@
+2002-04-12  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.md (andhi_1): Don't crash if 0xffff makes it in
+	(the constraint allows it).
+
+	* g++.old-deja/g++.other/rh4.C: New test.
+
+--- gcc/config/i386/i386.md.jj	Wed Mar 13 22:53:39 2002
++++ gcc/config/i386/i386.md	Fri Apr 12 20:27:02 2002
+@@ -5662,6 +5662,8 @@
+ 	abort ();
+       if (INTVAL (operands[2]) == 0xff)
+ 	return \"movz{bl|x}\\t{%b1, %k0|%k0, %b1}\";
++      else if (INTVAL (operands[2]) == 0xffff)
++	return \"movz{wl|x}\\t{%1, %k0|%k0, %1}\";
+       abort ();
+ 
+     default:
+--- gcc/testsuite/g++.old-deja/g++.other/rh4.C.jj	Fri Apr 12 20:33:06 2002
++++ gcc/testsuite/g++.old-deja/g++.other/rh4.C	Fri Apr 12 20:33:15 2002
+@@ -0,0 +1,15 @@
++// Build don't link:
++// Special g++ Options: -O2
++
++void
++foo (int *w, double x, int y, short *z)
++{
++  int a = 0xffff;
++
++  if (y)
++    *w = (int) (x * 4096.0);
++  else
++    *w = (int) (x * 65536.0);
++
++  *z = *w & a;
++}

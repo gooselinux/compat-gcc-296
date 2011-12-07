@@ -1,0 +1,26 @@
+2001-02-09  Jason Merrill  <jason@redhat.com>
+
+	* lang-specs.h: Restore definition of __EXCEPTIONS.
+
+--- gcc/cp/lang-specs.h.jj	Mon Mar 26 19:25:17 2001
++++ gcc/cp/lang-specs.h	Tue Apr  3 17:16:03 2001
+@@ -31,9 +31,11 @@ Boston, MA 02111-1307, USA.  */
+   {"@c++",
+ #if USE_CPPLIB
+     "%{E|M|MM:cpp0 -lang-c++ %{!no-gcc:-D__GNUG__=%v1}\
++       %{!fno-exceptions:-D__EXCEPTIONS}\
+        %{fnew-abi:-D__GXX_ABI_VERSION=100}\
+        %{ansi:-trigraphs -$ -D__STRICT_ANSI__} %(cpp_options)}\
+      %{!E:%{!M:%{!MM:cc1plus -lang-c++ %{!no-gcc:-D__GNUG__=%v1}\
++       %{!fno-exceptions:-D__EXCEPTIONS}\
+        %{fnew-abi:-D__GXX_ABI_VERSION=100}\
+        %{ansi:-trigraphs -$ -D__STRICT_ANSI__}\
+        %(cpp_options) %(cc1_options) %{+e*}\
+@@ -41,6 +43,7 @@ Boston, MA 02111-1307, USA.  */
+      as %(asm_options) %{!pipe:%g.s} %A }}}}"
+ #else /* ! USE_CPPLIB */
+     "cpp0 -lang-c++ %{!no-gcc:-D__GNUG__=%v1}\
++       %{!fno-exceptions:-D__EXCEPTIONS}\
+        %{fnew-abi:-D__GXX_ABI_VERSION=100}\
+        %{ansi:-trigraphs -$ -D__STRICT_ANSI__} %(cpp_options)\
+        %{!M:%{!MM:%{!E:%{!pipe:%g.ii} |\n\

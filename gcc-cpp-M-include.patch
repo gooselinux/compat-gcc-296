@@ -1,0 +1,87 @@
+2001-01-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* cppfiles.c (cpp_read_file): Add to dependencies if requested.
+	* cppinit.c (initialize_dependency_output): Remove deps_add_dep call.
+	(cpp_start_read): Move cpp_read_file after
+	initialize_dependency_output.
+	* tradcpp.c (main): Add -imacros or -include'd dependencies
+	for -M*.
+	* cpp.texi (-M, -MM): Document -M -include behaviour.
+
+--- gcc/cppfiles.c.jj	Fri Jan 19 00:17:13 2001
++++ gcc/cppfiles.c	Wed Jan 24 13:29:52 2001
+@@ -580,6 +580,9 @@ cpp_read_file (pfile, fname)
+       return 0;
+     }
+ 
++  if (CPP_OPTION (pfile, print_deps))
++    deps_add_dep (pfile->deps, f->name);
++
+   return read_include_file (pfile, f);
+ }
+ 
+--- gcc/cppinit.c.jj	Fri Jan 19 00:17:13 2001
++++ gcc/cppinit.c	Wed Jan 24 13:31:01 2001
+@@ -680,9 +680,6 @@ initialize_dependency_output (pfile)
+     deps_add_target (pfile->deps, "-");
+   else
+     deps_calc_target (pfile->deps, CPP_OPTION (pfile, in_fname));
+-
+-  if (CPP_OPTION (pfile, in_fname))
+-    deps_add_dep (pfile->deps, CPP_OPTION (pfile, in_fname));
+ }
+ 
+ /* And another subroutine.  This one sets up the standard include path.  */
+@@ -863,10 +860,10 @@ cpp_start_read (pfile, print, fname)
+   if (CPP_OPTION (pfile, out_fname) == NULL)
+     CPP_OPTION (pfile, out_fname) = "";
+ 
++  initialize_dependency_output (pfile);
++
+   if (!cpp_read_file (pfile, fname))
+     return 0;
+-
+-  initialize_dependency_output (pfile);
+ 
+   /* -D and friends may produce output, which should be identified
+      as line 0.  */
+--- gcc/tradcpp.c.jj	Fri Jan 19 00:17:13 2001
++++ gcc/tradcpp.c	Tue Jan 23 19:50:00 2001
+@@ -799,6 +799,11 @@ main (argc, argv)
+ 	perror_with_name (pend_files[i]);
+ 	return FATAL_EXIT_CODE;
+       }
++      /* For -M, add this file to the dependencies.  */
++      if (print_deps) {
++	deps_output (pend_files[i], strlen (pend_files[i]));
++	deps_output (" ", 0);
++      }
+       finclude (fd, pend_files[i], &outbuf);
+     }
+   no_output--;
+--- gcc/cpp.texi.jj	Fri Jan 19 00:16:57 2001
++++ gcc/cpp.texi	Wed Jan 24 13:35:05 2001
+@@ -3281,8 +3281,9 @@ Instead of outputting the result of prep
+ suitable for @code{make} describing the dependencies of the main source
+ file.  The preprocessor outputs one @code{make} rule containing the
+ object file name for that source file, a colon, and the names of all the
+-included files.  If there are many included files then the rule is split
+-into several lines using @samp{\}-newline.
++included files, including those coming from @samp{-include} or
++@samp{-imacros} command line options.  If there are many included files
++then the rule is split into several lines using @samp{\}-newline.
+ 
+ @samp{-MG} says to treat missing header files as generated files and
+ assume they live in the same directory as the source file.  It must be
+@@ -3293,8 +3294,9 @@ This feature is used in automatic updati
+ @item -MM [-MG]
+ @findex -MM
+ Like @samp{-M} but mention only the files included with @samp{#include
+-"@var{file}"}.  System header files included with @samp{#include
+-<@var{file}>} are omitted.
++"@var{file}"} or with @samp{-include} or @samp{-imacros} command line
++options.  System header files included with @samp{#include <@var{file}>}
++are omitted.
+ 
+ @item -MD @var{file}
+ @findex -MD

@@ -1,0 +1,92 @@
+2001-11-28  Jakub Jelinek  <jakub@redhat.com>
+
+	* stdstreams.cc (_fake_istream, _fake_ostream): Add vptr as
+	separate field.
+	(_vptr_ostream, _vptr_istream): New externs.
+	(OSTREAM_DEF, ISTREAM_DEF): Set vptr for standard streams.
+
+	* g++.old-deja/g++.other/rtti6.C: New test.
+
+--- gcc/testsuite/g++.old-deja/g++.other/rtti6.C.jj	Wed Nov 28 14:26:43 2001
++++ gcc/testsuite/g++.old-deja/g++.other/rtti6.C	Wed Nov 28 14:27:27 2001
+@@ -0,0 +1,14 @@
++// test whether rtti works correctly on cout
++// Special g++ Options: -O2
++
++#include <iostream>
++#include <typeinfo>
++
++using namespace std;
++
++int main ()
++{
++  typeid (cout);
++  ostream &cref=cout;
++  typeid (cref);
++}
+--- libio/stdstreams.cc.jj	Sat Sep  4 17:08:50 1999
++++ libio/stdstreams.cc	Wed Nov 28 14:16:24 2001
+@@ -78,7 +78,12 @@ struct _fake_istream {
+ #endif
+     } mine;
+     _ios_fields base;
++#if !defined(__GNUC__) || __GNUC__ != 2 || __GNUC_MINOR__ != 96
+     char filler[sizeof(struct istream)-sizeof(struct _ios_fields)+PAD];
++#else
++    char *vptr;
++    void *filler, *filler2;
++#endif
+ };
+ struct _fake_ostream {
+     struct myfields {
+@@ -88,7 +93,12 @@ struct _fake_ostream {
+ 	_ios_fields *vb; /* pointer to virtual base class ios */
+     } mine;
+     _ios_fields base;
++#if !defined(__GNUC__) || __GNUC__ != 2 || __GNUC_MINOR__ != 96
+     char filler[sizeof(struct ostream)-sizeof(struct _ios_fields)+PAD];
++#else
++    void *vptr;
++    void *filler;
++#endif
+ };
+ 
+ 
+@@ -101,14 +111,33 @@ struct _fake_ostream {
+ #endif
+ 
+ #ifdef __GNUC__
+-#define OSTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS, ASM) \
++# if __GNUC__ == 2 && __GNUC_MINOR__ == 96
++#  if defined(__i386__) || defined(__ia64__) || defined(__sparc__)
++extern char _vptr_ostream[] __asm ("__vt_22_IO_ostream_withassign.3ios");
++extern char _vptr_istream[] __asm ("__vt_22_IO_istream_withassign.3ios");
++#  elif defined(__alpha__)
++extern char _vptr_ostream[] __asm ("__vt_22_IO_ostream_withassign$3ios");
++extern char _vptr_istream[] __asm ("__vt_22_IO_istream_withassign$3ios");
++#  else
++#   define _vptr_ostream NULL
++#   define _vptr_istream NULL
++#  endif
++#  define OSTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS, ASM) \
++  _fake_ostream NAME ASM = { {&NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS) }, \
++			     _vptr_ostream };
++#  define ISTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
++  _fake_istream NAME = { {&NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS) }, \
++			 _vptr_istream };
++# else
++#  define OSTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS, ASM) \
+   _fake_ostream NAME ASM = { {&NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS) }};
+-#define ISTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
++#  define ISTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
+   _fake_istream NAME = { {&NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS) }};
++# endif
+ #else
+-#define OSTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
++# define OSTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
+   _fake_ostream NAME = { {0, &NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS) }};
+-#define ISTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
++# define ISTREAM_DEF(NAME, SBUF, TIE, EXTRA_FLAGS) \
+   _fake_istream NAME = {{0, 0, &NAME.base}, {STD_STR(SBUF, TIE, EXTRA_FLAGS)}};
+ #endif
+ 

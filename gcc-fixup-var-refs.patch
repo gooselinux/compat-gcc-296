@@ -1,0 +1,101 @@
+2001-01-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* function.c (fixup_var_refs): Move CALL_PLACEHOLDER handling...
+	(fixup_var_refs_insns): ...here.
+
+	* gcc.c-torture/compile/20010118-1.c: New test.
+
+--- gcc/function.c.jj	Fri Jan 12 04:21:30 2001
++++ gcc/function.c	Thu Jan 18 08:06:55 2001
+@@ -1522,7 +1522,6 @@ fixup_var_refs (var, promoted_mode, unsi
+   rtx first_insn = get_insns ();
+   struct sequence_stack *stack = seq_stack;
+   tree rtl_exps = rtl_expr_chain;
+-  rtx insn;
+ 
+   /* Must scan all insns for stack-refs that exceed the limit.  */
+   fixup_var_refs_insns (var, promoted_mode, unsignedp, first_insn, 
+@@ -1562,30 +1561,6 @@ fixup_var_refs (var, promoted_mode, unsi
+ 			0, 0);
+   end_full_sequence (&catch_clauses, &catch_clauses_last);
+ 
+-  /* Scan sequences saved in CALL_PLACEHOLDERS too.  */
+-  for (insn = first_insn; insn; insn = NEXT_INSN (insn))
+-    {
+-      if (GET_CODE (insn) == CALL_INSN
+-	  && GET_CODE (PATTERN (insn)) == CALL_PLACEHOLDER)
+-	{
+-	  int i;
+-
+-	  /* Look at the Normal call, sibling call and tail recursion
+-	     sequences attached to the CALL_PLACEHOLDER.  */
+-	  for (i = 0; i < 3; i++)
+-	    {
+-	      rtx seq = XEXP (PATTERN (insn), i);
+-	      if (seq)
+-		{
+-		  push_to_sequence (seq);
+-		  fixup_var_refs_insns (var, promoted_mode, unsignedp,
+-					seq, 0, 0);
+-		  XEXP (PATTERN (insn), i) = get_insns ();
+-		  end_sequence ();
+-		}
+-	    }
+-	}
+-    }
+ }
+ 
+ /* REPLACEMENTS is a pointer to a list of the struct fixup_replacement and X is
+@@ -1651,6 +1626,28 @@ fixup_var_refs_insns (var, promoted_mode
+ 	{
+ 	  /* Remember the notes in case we delete the insn.  */
+ 	  note = REG_NOTES (insn);
++
++	  /* Scan sequences saved in CALL_PLACEHOLDERS too.  */
++	  if (GET_CODE (insn) == CALL_INSN
++	      && GET_CODE (PATTERN (insn)) == CALL_PLACEHOLDER)
++	    {
++	      int i;
++
++	      /* Look at the Normal call, sibling call and tail recursion
++		 sequences attached to the CALL_PLACEHOLDER.  */
++	      for (i = 0; i < 3; i++)
++		{
++		  rtx seq = XEXP (PATTERN (insn), i);
++		  if (seq)
++		    {
++		      push_to_sequence (seq);
++		      fixup_var_refs_insns (var, promoted_mode, unsignedp,
++					    seq, 0, 0);
++		      XEXP (PATTERN (insn), i) = get_insns ();
++		      end_sequence ();
++		    }
++		}
++	    }
+ 
+ 	  /* If this is a CLOBBER of VAR, delete it.
+ 
+--- gcc/testsuite/gcc.c-torture/compile/20010118-1.c.jj	Thu Jan 18 09:24:41 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010118-1.c	Thu Jan 18 09:24:34 2001
+@@ -0,0 +1,21 @@
++static unsigned int bar(void *h, unsigned int n)
++{
++  static int i;
++  return i++;
++}
++
++static void baz(unsigned int *x)
++{
++  (*x)++;
++}
++
++long
++foo(void *h, unsigned int l)
++{
++  unsigned int n;
++  long m;
++  n = bar(h, 0);
++  n = bar(h, n);
++  m = ({ baz(&n); 21; });
++  return m;
++}

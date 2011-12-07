@@ -1,0 +1,420 @@
+2000-08-18  Nathan Sidwell  <nathan@codesourcery.com>
+        
+        * cp-tree.h (PTRMEM_OK_P): New macro.
+        * class.c (resolve_address_of_overloaded_function): Add PTRMEM
+        argument. Diagnose implicit pointer to member.
+        (instantiate_type): Don't diagnose implicit pointer to member
+        here. Pass itf_ptrmem_ok if ok. Adjust calls to
+        resolve_address_of_overloaded_function.
+        * init.c (build_offset_ref): Set PTRMEM_OK_P.
+        (resolve_offset_ref): Don't diagnose implicit pointer to member here.
+        * semantics.c (finish_parenthesized_expr): Clear OFFSET_REFs here.
+        * typeck.c (build_x_unary_op): Calculate PTRMEM_OK_P.
+        (build_unary_op): Deal with single non-static member in
+        microsoft-land.
+
+--- gcc/cp/semantics.c.jj	2002-12-02 10:02:30.000000000 -0500
++++ gcc/cp/semantics.c	2003-09-15 18:22:18.000000000 -0400
+@@ -1314,6 +1314,10 @@ finish_parenthesized_expr (expr)
+     /* This inhibits warnings in truthvalue_conversion.  */
+     C_SET_EXP_ORIGINAL_CODE (expr, ERROR_MARK); 
+ 
++  if (TREE_CODE (expr) == OFFSET_REF)
++    /* [expr.unary.op]/3 The qualified id of a pointer-to-member must not be
++       enclosed in parentheses.  */
++    PTRMEM_OK_P (expr) = 0;
+   return expr;
+ }
+ 
+--- gcc/cp/typeck.c.jj	2002-12-02 10:02:35.000000000 -0500
++++ gcc/cp/typeck.c	2003-09-15 18:22:18.000000000 -0400
+@@ -4296,6 +4296,9 @@ build_x_unary_op (code, xarg)
+      enum tree_code code;
+      tree xarg;
+ {
++  tree exp;
++  int ptrmem = 0;
++  
+   if (processing_template_decl)
+     return build_min_nt (code, xarg, NULL_TREE);
+ 
+@@ -4316,14 +4319,26 @@ build_x_unary_op (code, xarg)
+       if (rval || code != ADDR_EXPR)
+ 	return rval;
+     }
+-
+   if (code == ADDR_EXPR)
+     {
+-      if (TREE_CODE (xarg) == TARGET_EXPR)
++      if (TREE_CODE (xarg) == OFFSET_REF)
++        {
++          ptrmem = PTRMEM_OK_P (xarg);
++          
++          if (!ptrmem && !flag_ms_extensions
++              && TREE_CODE (TREE_TYPE (TREE_OPERAND (xarg, 1))) == METHOD_TYPE)
++            /* A single non-static member, make sure we don't allow a
++               pointer-to-member.  */
++            xarg = ovl_cons (TREE_OPERAND (xarg, 1), NULL_TREE);
++        }
++      else if (TREE_CODE (xarg) == TARGET_EXPR)
+ 	warning ("taking address of temporary");
+     }
++  exp = build_unary_op (code, xarg, 0);
++  if (TREE_CODE (exp) == ADDR_EXPR)
++    PTRMEM_OK_P (exp) = ptrmem;
+ 
+-  return build_unary_op (code, xarg, 0);
++  return exp;
+ }
+ 
+ /* Just like truthvalue_conversion, but we want a CLEANUP_POINT_EXPR.  */
+@@ -4671,31 +4686,17 @@ build_unary_op (code, xarg, noconvert)
+ 	  return build1 (ADDR_EXPR, unknown_type_node, arg);
+ 	}
+ 
+-      if (TREE_CODE (arg) == COMPONENT_REF && type_unknown_p (arg)
+-	  && OVL_NEXT (TREE_OPERAND (arg, 1)) == NULL_TREE)
+-	{
++      if (TREE_CODE (arg) == COMPONENT_REF && flag_ms_extensions
++          && type_unknown_p (arg)
++          && OVL_NEXT (TREE_OPERAND (arg, 1)) == NULL_TREE)
++        {
+ 	  /* They're trying to take the address of a unique non-static
+-	     member function.  This is ill-formed, but let's try to DTRT.
+-	     Note: We only handle unique functions here because we don't
+-	     want to complain if there's a static overload; non-unique
+-	     cases will be handled by instantiate_type.  But we need to
+-	     handle this case here to allow casts on the resulting PMF.  */
++	     member function.  This is ill-formed, except in microsoft-land.  */
+ 
+ 	  tree base = TREE_TYPE (TREE_OPERAND (arg, 0));
+ 	  tree name = DECL_NAME (OVL_CURRENT (TREE_OPERAND (arg, 1)));
+-
+-	  if (! flag_ms_extensions)
+-	    {
+-	      if (current_class_type
+-		  && TREE_OPERAND (arg, 0) == current_class_ref)
+-		/* An expression like &memfn.  */
+-		cp_pedwarn ("ISO C++ forbids taking the address of an unqualified non-static member function to form a pointer to member function.  Say `&%T::%D'", base, name);
+-	      else
+-		cp_pedwarn ("ISO C++ forbids taking the address of a bound member function to form a pointer to member function", base, name);
+-	    }
+-
+ 	  arg = build_offset_ref (base, name);
+-	}
++        }
+ 
+       if (type_unknown_p (arg))
+ 	return build1 (ADDR_EXPR, unknown_type_node, arg);
+--- gcc/cp/class.c.jj	2002-12-02 10:02:15.000000000 -0500
++++ gcc/cp/class.c	2003-09-15 18:22:18.000000000 -0400
+@@ -132,7 +132,7 @@ static int method_name_cmp PARAMS ((cons
+ static tree add_implicitly_declared_members PARAMS ((tree, int, int, int));
+ static tree fixed_type_or_null PARAMS ((tree, int *));
+ static tree resolve_address_of_overloaded_function PARAMS ((tree, tree, int,
+-							  int, tree));
++							  int, int, tree));
+ static void build_vtable_entry_ref PARAMS ((tree, tree, tree));
+ static tree build_vtbl_initializer PARAMS ((tree, tree, tree, tree, int *));
+ static int count_fields PARAMS ((tree));
+@@ -5728,19 +5728,22 @@ pop_lang_context ()
+ /* Given an OVERLOAD and a TARGET_TYPE, return the function that
+    matches the TARGET_TYPE.  If there is no satisfactory match, return
+    error_mark_node, and issue an error message if COMPLAIN is
+-   non-zero.  If TEMPLATE_ONLY, the name of the overloaded function
++   non-zero.  Permit pointers to member function if PTRMEM is non-zero.
++   If TEMPLATE_ONLY, the name of the overloaded function
+    was a template-id, and EXPLICIT_TARGS are the explicitly provided
+    template arguments.  */
+ 
+ static tree
+ resolve_address_of_overloaded_function (target_type, 
+ 					overload,
+-					complain, 
++					complain,
++	                                ptrmem,
+ 					template_only,
+ 					explicit_targs)
+      tree target_type;
+      tree overload;
+      int complain;
++     int ptrmem;
+      int template_only;
+      tree explicit_targs;
+ {
+@@ -5963,6 +5966,14 @@ resolve_address_of_overloaded_function (
+   /* Good, exactly one match.  Now, convert it to the correct type.  */
+   fn = TREE_PURPOSE (matches);
+ 
++  if (TREE_CODE (TREE_TYPE (fn)) == METHOD_TYPE
++      && !ptrmem && !flag_ms_extensions)
++    {
++      if (!complain)
++        return error_mark_node;
++
++      cp_pedwarn ("assuming pointer to member `%D'", fn);
++    }
+   mark_used (fn);
+ 
+   if (TYPE_PTRFN_P (target_type) || TYPE_PTRMEMFUNC_P (target_type))
+@@ -5997,8 +6008,10 @@ instantiate_type (lhstype, rhs, flags)
+ {
+   int complain = (flags & 1);
+   int strict = (flags & 2) ? COMPARE_NO_ATTRIBUTES : COMPARE_STRICT;
+-  tree r;
++  int allow_ptrmem = flags & 4;
+ 
++  flags &= ~4;
++  
+   if (TREE_CODE (lhstype) == UNKNOWN_TYPE)
+     {
+       if (complain)
+@@ -6057,36 +6070,13 @@ instantiate_type (lhstype, rhs, flags)
+       return instantiate_type (lhstype, rhs, flags);
+ 
+     case COMPONENT_REF:
+-      {
+-	r = instantiate_type (lhstype, TREE_OPERAND (rhs, 1), flags);
+-
+-      comp:
+-	if (r != error_mark_node && TYPE_PTRMEMFUNC_P (lhstype)
+-	    && complain && !flag_ms_extensions)
+-	  {
+-	    /* Note: we check this after the recursive call to avoid
+-	       complaining about cases where overload resolution fails.  */
+-
+-	    tree t = TREE_TYPE (TREE_OPERAND (rhs, 0));
+-	    tree fn = PTRMEM_CST_MEMBER (r);
+-
+-	    my_friendly_assert (TREE_CODE (r) == PTRMEM_CST, 990811);
+-
+-	    cp_pedwarn
+-	      ("object-dependent reference to `%E' can only be used in a call",
+-	       DECL_NAME (fn));
+-	    cp_pedwarn
+-	      ("  to form a pointer to member function, say `&%T::%E'",
+-	       t, DECL_NAME (fn));
+-	  }
+-
+-	return r;
+-      }
++      return instantiate_type (lhstype, TREE_OPERAND (rhs, 1), flags);
+ 
+     case OFFSET_REF:
+       rhs = TREE_OPERAND (rhs, 1);
+       if (BASELINK_P (rhs))
+-	return instantiate_type (lhstype, TREE_VALUE (rhs), flags);
++	return instantiate_type (lhstype, TREE_VALUE (rhs),
++	                         flags | allow_ptrmem);
+ 
+       /* This can happen if we are forming a pointer-to-member for a
+ 	 member template.  */
+@@ -6099,18 +6089,13 @@ instantiate_type (lhstype, rhs, flags)
+ 	tree fns = TREE_OPERAND (rhs, 0);
+ 	tree args = TREE_OPERAND (rhs, 1);
+ 
+-	r =
++	return
+ 	  resolve_address_of_overloaded_function (lhstype,
+ 						  fns,
+ 						  complain,
++	                                          allow_ptrmem,
+ 						  /*template_only=*/1,
+ 						  args);
+-	if (TREE_CODE (fns) == COMPONENT_REF)
+-	  {
+-	    rhs = fns;
+-	    goto comp;
+-	  }
+-	return r;
+       }
+ 
+     case OVERLOAD:
+@@ -6118,6 +6103,7 @@ instantiate_type (lhstype, rhs, flags)
+ 	resolve_address_of_overloaded_function (lhstype, 
+ 						rhs,
+ 						complain,
++	                                        allow_ptrmem,
+ 						/*template_only=*/0,
+ 						/*explicit_targs=*/NULL_TREE);
+ 
+@@ -6229,8 +6215,12 @@ instantiate_type (lhstype, rhs, flags)
+       return rhs;
+       
+     case ADDR_EXPR:
++    {
++      if (PTRMEM_OK_P (rhs))
++        flags |= 4;
++      
+       return instantiate_type (lhstype, TREE_OPERAND (rhs, 0), flags);
+-
++    }
+     case ENTRY_VALUE_EXPR:
+       my_friendly_abort (184);
+       return error_mark_node;
+--- gcc/cp/cp-tree.h.jj	2002-12-02 10:02:19.000000000 -0500
++++ gcc/cp/cp-tree.h	2003-09-15 18:22:18.000000000 -0400
+@@ -41,6 +41,7 @@ Boston, MA 02111-1307, USA.  */
+       AGGR_INIT_VIA_CTOR_P (in AGGR_INIT_EXPR)
+       CTOR_BEGIN_P (in CTOR_STMT)
+       BV_USE_VCALL_INDEX_P (in the BINFO_VIRTUALS TREE_LIST)
++      PTRMEM_OK_P (in ADDR_EXPR, OFFSET_REF)
+    1: IDENTIFIER_VIRTUAL_P.
+       TI_PENDING_TEMPLATE_FLAG.
+       TEMPLATE_PARMS_FOR_INLINE.
+@@ -2693,6 +2694,10 @@ extern int flag_new_for_scope;
+ #define TYPE_PTRMEMFUNC_FLAG(NODE) \
+   (TYPE_LANG_SPECIFIC(NODE)->ptrmemfunc_flag)
+ 
++/* Indicates when overload resolution may resolve to a pointer to
++   member function. [expr.unary.op]/3 */
++#define PTRMEM_OK_P(NODE) TREE_LANG_FLAG_0 (NODE)
++
+ /* A pointer-to-function member type looks like:
+ 
+    struct {
+--- gcc/cp/init.c.jj	2002-12-02 10:02:30.000000000 -0500
++++ gcc/cp/init.c	2003-09-15 18:22:18.000000000 -0400
+@@ -1709,13 +1709,13 @@ build_offset_ref (type, name)
+ 	       expects to encounter OVERLOADs, not raw functions.  */
+ 	    t = ovl_cons (t, NULL_TREE);
+ 
+-	  return build (OFFSET_REF, 
+-			unknown_type_node,
+-			decl,
+-			build (TEMPLATE_ID_EXPR, 
+-			       TREE_TYPE (t),
+-			       t,
+-			       TREE_OPERAND (orig_name, 1)));
++          t = build (TEMPLATE_ID_EXPR, TREE_TYPE (t), t,
++	             TREE_OPERAND (orig_name, 1));
++	  t = build (OFFSET_REF, unknown_type_node, decl, t);
++          
++          PTRMEM_OK_P (t) = 1;
++          	  
++	  return t;
+ 	}
+ 
+       if (!really_overloaded_fn (t))
+@@ -1729,11 +1729,16 @@ build_offset_ref (type, name)
+ 	  mark_used (t);
+ 	  if (DECL_STATIC_FUNCTION_P (t))
+ 	    return t;
+-	  return build (OFFSET_REF, TREE_TYPE (t), decl, t);
++	  t = build (OFFSET_REF, TREE_TYPE (t), decl, t);
++	  PTRMEM_OK_P (t) = 1;
++	  return t;
+ 	}
+ 
+       TREE_TYPE (fnfields) = unknown_type_node;
+-      return build (OFFSET_REF, unknown_type_node, decl, fnfields);
++      
++      t = build (OFFSET_REF, unknown_type_node, decl, fnfields);
++      PTRMEM_OK_P (t) = 1;
++      return t;
+     }
+ 
+   t = member;
+@@ -1771,7 +1776,9 @@ build_offset_ref (type, name)
+   /* In member functions, the form `type::name' is no longer
+      equivalent to `this->type::name', at least not until
+      resolve_offset_ref.  */
+-  return build (OFFSET_REF, build_offset_type (type, TREE_TYPE (t)), decl, t);
++  t = build (OFFSET_REF, build_offset_type (type, TREE_TYPE (t)), decl, t);
++  PTRMEM_OK_P (t) = 1;
++  return t;
+ }
+ 
+ /* If a OFFSET_REF made it through to here, then it did
+@@ -1805,16 +1812,15 @@ resolve_offset_ref (exp)
+     }
+ 
+   if (BASELINK_P (member))
+-    {
+-      if (! flag_ms_extensions)
+-	cp_pedwarn ("assuming & on overloaded member function");
+-      return build_unary_op (ADDR_EXPR, exp, 0);
+-    }
+-
++    return build_unary_op (ADDR_EXPR, exp, 0);
++  
+   if (TREE_CODE (TREE_TYPE (member)) == METHOD_TYPE)
+     {
+-      if (! flag_ms_extensions)
+-	cp_pedwarn ("assuming & on `%E'", member);
++      if (!flag_ms_extensions)
++        /* A single non-static member, make sure we don't allow a
++           pointer-to-member.  */
++        exp = ovl_cons (member, NULL_TREE);
++      
+       return build_unary_op (ADDR_EXPR, exp, 0);
+     }
+ 
+--- gcc/testsuite/g++.old-deja/g++.benjamin/13478.C.jj	1998-12-16 16:21:38.000000000 -0500
++++ gcc/testsuite/g++.old-deja/g++.benjamin/13478.C	2003-09-15 18:22:18.000000000 -0400
+@@ -19,7 +19,7 @@ protected:
+   static const hand_table table_1[];
+   static const AData 	  table_2;
+ private:
+-  void foo (void);
++  void foo (void);		// ERROR - candidate
+ };
+ 
+ const hand_table Agent::table_1[] = 
+--- gcc/testsuite/g++.old-deja/g++.bugs/900205_03.C.jj	2000-04-07 17:02:34.000000000 -0400
++++ gcc/testsuite/g++.old-deja/g++.bugs/900205_03.C	2003-09-15 18:22:18.000000000 -0400
+@@ -25,10 +25,10 @@ struct00 global_function_1 () {
+ struct struct0 {
+ 
+   int struct0_member_function_0 () {
+-  }					// ERROR - XFAIL
++  }					// ERROR - 
+ 
+   struct0 struct0_member_function_1 () {
+-  }					// ERROR - XFAIL
++  }					// ERROR - 
+ };
+ 
+ struct struct1 {
+--- gcc/testsuite/g++.old-deja/g++.law/operators17.C.jj	2000-04-07 17:02:35.000000000 -0400
++++ gcc/testsuite/g++.old-deja/g++.law/operators17.C	2003-09-15 18:22:18.000000000 -0400
+@@ -8,5 +8,5 @@
+ // Message-ID: <9304291053.AA00090@mencon>
+ 
+         struct A {
+-                A& operator = (const A& a) {}// ERROR - XFAIL
++                A& operator = (const A& a) {}// ERROR - 
+         };
+--- gcc/testsuite/g++.old-deja/g++.mike/net36.C.jj	1999-05-07 05:54:10.000000000 -0400
++++ gcc/testsuite/g++.old-deja/g++.mike/net36.C	2003-09-15 18:22:18.000000000 -0400
+@@ -11,7 +11,7 @@ typedef void (A::*handler) (X*);
+ 
+ class B {
+ public:
+-  void setHandler(handler);
++  void setHandler(handler);	// ERROR - candidate
+ };
+ 
+ void f(B* b) {
+--- gcc/testsuite/g++.old-deja/g++.oliva/overload1.C.jj	1999-09-18 14:06:20.000000000 -0400
++++ gcc/testsuite/g++.old-deja/g++.oliva/overload1.C	2003-09-15 18:22:18.000000000 -0400
+@@ -12,7 +12,7 @@ struct foo {
+ 
+ /* gcc emits a hard error without -pedantic, and a warning with
+    -pedantic, even in bad1.  */
+-int (*ok1)() = foo::bar; // gets bogus error - XFAIL *-*-*
++int (*ok1)() = foo::bar; // gets bogus error - 
+ void (foo::*bad1)(int) = foo::bar; // ERROR - missing &
+ 
+ int (*ok2)() = &foo::bar; // ok
+--- gcc/testsuite/g++.old-deja/g++.robertl/eb131.C.jj	1999-05-24 00:24:30.000000000 -0400
++++ gcc/testsuite/g++.old-deja/g++.robertl/eb131.C	2003-09-15 18:22:18.000000000 -0400
+@@ -10,7 +10,7 @@ struct a {
+ 	void bar( double );
+ 	void bar( float );
+ 
+-  void foo( void (a::*member)(float) );
++  void foo( void (a::*member)(float) );	// ERROR - candidate
+ };
+ 
+ a::a()

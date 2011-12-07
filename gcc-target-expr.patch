@@ -1,0 +1,26 @@
+2001-03-16  Jakub Jelinek  <jakub@redhat.com>
+
+	* expr.c (expand_expr): If TARGET_EXPR is putting a non-constant
+	variable into place of constant variable, clear the /u flag if
+	possible.
+
+--- gcc/expr.c.jj	Mon Mar 12 13:41:38 2001
++++ gcc/expr.c	Fri Mar 16 19:46:26 2001
+@@ -8167,6 +8167,17 @@ expand_expr (exp, target, tmode, modifie
+ 	    else
+ 	      {
+ 		DECL_RTL (slot) = target;
++
++		/* If target is unchanging, but slot is not, we could end up
++		   initializing the unchanging target through non-unchanging
++		   references.  */
++		if (RTX_UNCHANGING_P (target) && ! TREE_READONLY (slot)
++		    && (GET_CODE (target) == REG
++			|| (GET_CODE (target) == MEM
++			    && GET_CODE (XEXP (target, 0)) == ADDRESSOF
++			    && GET_CODE (XEXP (XEXP (target, 0), 0)) == REG)))
++		  RTX_UNCHANGING_P (target) = 0;
++
+ 		/* If we must have an addressable slot, then make sure that
+ 		   the RTL that we just stored in slot is OK.  */
+ 		if (TREE_ADDRESSABLE (slot))

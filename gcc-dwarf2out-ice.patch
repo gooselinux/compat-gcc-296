@@ -1,0 +1,38 @@
+2001-02-07  Alexandre Oliva <aoliva@redhat.com>
+
+	* dwarf2out.c (gen_subprogram_die): Don't call
+	add_abstract_origin_attribute if lookup_decl_die is NULL.
+
+2001-02-07  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.dg/20010207-1.c: New test.
+
+--- gcc/testsuite/gcc.dg/20010207-1.c.jj	Wed Feb  7 17:36:27 2001
++++ gcc/testsuite/gcc.dg/20010207-1.c	Wed Feb  7 17:39:01 2001
+@@ -0,0 +1,6 @@
++/* { dg-do compile { target i?86-*-* } } */
++/* { dg-options "-O3 -gdwarf-2" } */
++
++extern inline int f1 (void) {return f2();}
++int f3 (void) {return f1();}
++int f1 (void) {return 0;}
+--- gcc/dwarf2out.c.jj	Mon Feb  5 15:10:33 2001
++++ gcc/dwarf2out.c	Wed Feb  7 20:09:15 2001
+@@ -8499,7 +8499,16 @@ gen_subprogram_die (decl, context_die)
+ 	add_child_die (context_die, old_die);
+ 
+       subr_die = new_die (DW_TAG_subprogram, context_die);
+-      add_abstract_origin_attribute (subr_die, origin);
++      /* lookup_decl_die (origin) may be NULL if decl is a copy of an
++	 implicit declaration of a function that was created while
++	 inlining a function that referenced the function without a
++	 prior declaration.  Since we don't emit such implicit
++	 declarations in the first place, there's no point in linking
++	 this copy to it.  Besides, add_abstract_origin_attribute()
++	 would crash.  */
++      if (TREE_CODE (origin) != FUNCTION_DECL
++	  || lookup_decl_die (origin))
++	add_abstract_origin_attribute (subr_die, origin);
+     }
+   else if (old_die && DECL_ABSTRACT (decl)
+ 	   && get_AT_unsigned (old_die, DW_AT_inline))

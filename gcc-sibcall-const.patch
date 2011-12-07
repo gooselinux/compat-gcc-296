@@ -1,0 +1,36 @@
+2000-11-28  Richard Henderson  <rth@redhat.com>
+
+	* calls.c (expand_call): Defer const/pure NO_DEFER_POP until
+	after sibcall do_pending_stack_adjust.
+
+*** gcc/calls.c	2000/11/28 19:34:59	1.166
+--- gcc/calls.c	2000/11/28 23:15:49
+*************** expand_call (exp, target, ignore)
+*** 2657,2667 ****
+  	  expand_start_target_temps ();
+  	}
+  
+-       /* When calling a const function, we must pop the stack args right away,
+- 	 so that the pop is deleted or moved with the call.  */
+-       if (flags & (ECF_CONST | ECF_PURE))
+- 	NO_DEFER_POP;
+- 
+        /* Don't let pending stack adjusts add up to too much.
+  	 Also, do all pending adjustments now if there is any chance
+  	 this might be a call to alloca or if we are expanding a sibling
+--- 2657,2662 ----
+*************** expand_call (exp, target, ignore)
+*** 2670,2675 ****
+--- 2665,2675 ----
+  	  || (pending_stack_adjust > 0 && (flags & ECF_MAY_BE_ALLOCA))
+  	  || pass == 0)
+  	do_pending_stack_adjust ();
++ 
++       /* When calling a const function, we must pop the stack args right away,
++ 	 so that the pop is deleted or moved with the call.  */
++       if (flags & (ECF_CONST | ECF_PURE))
++ 	NO_DEFER_POP;
+  
+        /* Push the temporary stack slot level so that we can free any
+  	 temporaries we make.  */
+

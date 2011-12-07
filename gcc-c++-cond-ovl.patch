@@ -1,0 +1,105 @@
+2001-07-25  Nathan Sidwell  <nathan@codesourcery.com>
+
+        * call.c (build_conditional_expr): Recheck args after
+        conversions.
+        * typeck.c (decay_conversion): Diagnose any unknown types
+        reaching here.
+        (build_binary_op): Don't do initial decay or default
+        conversions on overloaded functions.
+        (build_static_cast): Don't do a decay conversion here.
+
+	* g++.old-deja/g++.other/cond7.C: New test.
+
+--- gcc/cp/call.c.jj	Tue Jul 24 20:41:05 2001
++++ gcc/cp/call.c	Wed Aug  8 18:18:56 2001
+@@ -3045,6 +3045,9 @@ build_conditional_expr (arg1, arg2, arg3
+     arg3 = decay_conversion (arg3);
+   arg3_type = TREE_TYPE (arg3);
+ 
++  if (arg2 == error_mark_node || arg3 == error_mark_node)
++    return error_mark_node;
++
+   /* [expr.cond]
+      
+      After those conversions, one of the following shall hold:
+--- gcc/cp/typeck.c.jj	Tue Jul 24 20:41:21 2001
++++ gcc/cp/typeck.c	Wed Aug  8 18:37:25 2001
+@@ -1723,6 +1723,12 @@ decay_conversion (exp)
+   if (type == error_mark_node)
+     return error_mark_node;
+ 
++  if (type_unknown_p (exp))
++    {
++      incomplete_type_error (exp, TREE_TYPE (exp));
++      return error_mark_node;
++    }
++
+   /* Constants can be used directly unless they're not loadable.  */
+   if (TREE_CODE (exp) == CONST_DECL)
+     exp = DECL_INITIAL (exp);
+@@ -3340,17 +3346,24 @@ build_binary_op (code, orig_op0, orig_op
+   int common = 0;
+ 
+   /* Apply default conversions.  */
++  op0 = orig_op0;
++  op1 = orig_op1;
++
+   if (code == TRUTH_AND_EXPR || code == TRUTH_ANDIF_EXPR
+       || code == TRUTH_OR_EXPR || code == TRUTH_ORIF_EXPR
+       || code == TRUTH_XOR_EXPR)
+     {
+-      op0 = decay_conversion (orig_op0);
+-      op1 = decay_conversion (orig_op1);
++      if (!really_overloaded_fn (op0))
++	op0 = decay_conversion (op0);
++      if (!really_overloaded_fn (op1))
++	op1 = decay_conversion (op1);
+     }
+   else
+     {
+-      op0 = default_conversion (orig_op0);
+-      op1 = default_conversion (orig_op1);
++      if (!really_overloaded_fn (op0))
++	op0 = default_conversion (op0);
++      if (!really_overloaded_fn (op1))
++	op1 = default_conversion (op1);
+     }
+ 
+   /* Strip NON_LVALUE_EXPRs, etc., since we aren't using as an lvalue.  */
+@@ -5125,7 +5138,6 @@ build_static_cast (type, expr)
+ 				    build_tree_list (NULL_TREE, expr),
+ 				    TYPE_BINFO (type), LOOKUP_NORMAL)));
+   
+-  expr = decay_conversion (expr);
+   intype = TREE_TYPE (expr);
+ 
+   /* FIXME handle casting to array type.  */
+--- gcc/testsuite/g++.old-deja/g++.other/cond7.C.jj	Wed Aug  8 18:37:39 2001
++++ gcc/testsuite/g++.old-deja/g++.other/cond7.C	Wed Jul 25 11:37:28 2001
+@@ -0,0 +1,26 @@
++// Build don't link:
++// 
++// Copyright (C) 2001 Free Software Foundation, Inc.
++// Contributed by Nathan Sidwell 24 Jul 2001 <nathan@codesourcery.com>
++
++// Bug 3416. We left some unchecked overloaded functions lying around.
++
++struct X
++{
++  void operator << (int);
++  void operator << (float);
++};
++
++void OVL1 (int);
++void OVL1 (float);
++
++void OVL2 (int);
++void OVL2 (float);
++
++X x;
++
++void foo (bool a)
++{
++  x << (a ? OVL1 : OVL2);	// ERROR - contextual type
++  a ? OVL1 : OVL2;              // ERROR - contextual type
++}

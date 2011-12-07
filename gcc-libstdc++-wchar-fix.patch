@@ -1,0 +1,94 @@
+2003-08-18  Jason Merrill  <jason@redhat.com>
+
+	Issue Tracker 19316, Red Hat Bugzilla 97372
+	* config/abi/i386-redhat-linux.txt: Use version GLIBC_2.0 for libgcc
+	symbols.
+	* config/abi/alpha-redhat-linux.txt: Likewise.
+
+--- libstdc++/config/abi/alpha-redhat-linux.txt.jj	Wed Aug 27 07:03:25 2003
++++ libstdc++/config/abi/alpha-redhat-linux.txt	Wed Aug 27 07:04:38 2003
+@@ -79,8 +79,8 @@ FUNC:delete_range__11edit_bufferll@@GLIB
+ FUNC:delete_range__11edit_bufferP9edit_markT1@@GLIBCPP_2.96
+ FUNC:delta__12streammarker@@GLIBCPP_2.96
+ FUNC:delta__12streammarkerR12streammarker@@GLIBCPP_2.96
+-FUNC:__deregister_frame@@GLIBCPP_2.96
+-FUNC:__deregister_frame_info@@GLIBCPP_2.96
++FUNC:__deregister_frame@@GLIBC_2.0
++FUNC:__deregister_frame_info@@GLIBC_2.0
+ FUNC:disconnect_gap_from_file__14edit_streambufP11edit_buffer@@GLIBCPP_2.96
+ FUNC:doallocate__7filebuf@@GLIBCPP_2.96
+ FUNC:doallocate__9streambuf@@GLIBCPP_2.96
+@@ -116,7 +116,7 @@ FUNC:flush_to_buffer__14edit_streambufP1
+ FUNC:form__7ostreamPCce@@GLIBCPP_2.96
+ FUNC:form__9streambufPCce@@GLIBCPP_2.96
+ FUNC:form__FPCce@@GLIBCPP_2.96
+-FUNC:__frame_state_for@@GLIBCPP_2.96
++FUNC:__frame_state_for@@GLIBC_2.0
+ FUNC:free_backup_area__9streambuf@@GLIBCPP_2.96
+ FUNC:gap_left__11edit_bufferi@@GLIBCPP_2.96
+ FUNC:gap_right__11edit_bufferi@@GLIBCPP_2.96
+@@ -208,10 +208,10 @@ FUNC:pword__3iosi@@GLIBCPP_2.96
+ FUNC:pword__C3iosi@@GLIBCPP_2.96
+ FUNC:read__7istreamPcl@@GLIBCPP_2.96
+ FUNC:readable__3ios@@GLIBCPP_2.96
+-FUNC:__register_frame@@GLIBCPP_2.96
+-FUNC:__register_frame_info@@GLIBCPP_2.96
+-FUNC:__register_frame_info_table@@GLIBCPP_2.96
+-FUNC:__register_frame_table@@GLIBCPP_2.96
++FUNC:__register_frame@@GLIBC_2.0
++FUNC:__register_frame_info@@GLIBC_2.0
++FUNC:__register_frame_info_table@@GLIBC_2.0
++FUNC:__register_frame_table@@GLIBC_2.0
+ FUNC:__rethrow@@GLIBCPP_2.96
+ FUNC:__rs__7istreamP9streambuf@@GLIBCPP_2.96
+ FUNC:__rs__7istreamPc@@GLIBCPP_2.96
+--- libstdc++/config/abi/i386-redhat-linux.txt.jj	Wed Aug 27 07:03:25 2003
++++ libstdc++/config/abi/i386-redhat-linux.txt	Wed Aug 27 07:04:38 2003
+@@ -79,8 +79,8 @@ FUNC:delete_range__11edit_bufferll@@GLIB
+ FUNC:delete_range__11edit_bufferP9edit_markT1@@GLIBCPP_2.96
+ FUNC:delta__12streammarker@@GLIBCPP_2.96
+ FUNC:delta__12streammarkerR12streammarker@@GLIBCPP_2.96
+-FUNC:__deregister_frame@@GLIBCPP_2.96
+-FUNC:__deregister_frame_info@@GLIBCPP_2.96
++FUNC:__deregister_frame@@GLIBC_2.0
++FUNC:__deregister_frame_info@@GLIBC_2.0
+ FUNC:disconnect_gap_from_file__14edit_streambufP11edit_buffer@@GLIBCPP_2.96
+ FUNC:doallocate__7filebuf@@GLIBCPP_2.96
+ FUNC:doallocate__9streambuf@@GLIBCPP_2.96
+@@ -116,7 +116,7 @@ FUNC:flush_to_buffer__14edit_streambufP1
+ FUNC:form__7ostreamPCce@@GLIBCPP_2.96
+ FUNC:form__9streambufPCce@@GLIBCPP_2.96
+ FUNC:form__FPCce@@GLIBCPP_2.96
+-FUNC:__frame_state_for@@GLIBCPP_2.96
++FUNC:__frame_state_for@@GLIBC_2.0
+ FUNC:free_backup_area__9streambuf@@GLIBCPP_2.96
+ FUNC:gap_left__11edit_bufferi@@GLIBCPP_2.96
+ FUNC:gap_right__11edit_bufferi@@GLIBCPP_2.96
+@@ -208,10 +208,10 @@ FUNC:pword__3iosi@@GLIBCPP_2.96
+ FUNC:pword__C3iosi@@GLIBCPP_2.96
+ FUNC:read__7istreamPci@@GLIBCPP_2.96
+ FUNC:readable__3ios@@GLIBCPP_2.96
+-FUNC:__register_frame@@GLIBCPP_2.96
+-FUNC:__register_frame_info@@GLIBCPP_2.96
+-FUNC:__register_frame_info_table@@GLIBCPP_2.96
+-FUNC:__register_frame_table@@GLIBCPP_2.96
++FUNC:__register_frame@@GLIBC_2.0
++FUNC:__register_frame_info@@GLIBC_2.0
++FUNC:__register_frame_info_table@@GLIBC_2.0
++FUNC:__register_frame_table@@GLIBC_2.0
+ FUNC:__rethrow@@GLIBCPP_2.96
+ FUNC:__rs__7istreamP9streambuf@@GLIBCPP_2.96
+ FUNC:__rs__7istreamPc@@GLIBCPP_2.96
+@@ -339,10 +339,10 @@ FUNC:__throw_type_match@@GLIBCPP_2.96
+ FUNC:__throw_type_match_rtti_2@@GLIBCPP_2.96
+ FUNC:__throw_type_match_rtti@@GLIBCPP_2.96
+ FUNC:truncate__14edit_streambuf@@GLIBCPP_2.96
+-FUNC:__udivdi3@@GLIBCPP_2.96
++FUNC:__udivdi3@@GLIBC_2.0
+ FUNC:uflow__11indirectbuf@@GLIBCPP_2.96
+ FUNC:uflow__9streambuf@@GLIBCPP_2.96
+-FUNC:__umoddi3@@GLIBCPP_2.96
++FUNC:__umoddi3@@GLIBC_2.0
+ FUNC:__uncatch_exception@@GLIBCPP_2.96
+ FUNC:uncaught_exception__Fv@@GLIBCPP_2.96
+ FUNC:underflow__11indirectbuf@@GLIBCPP_2.96

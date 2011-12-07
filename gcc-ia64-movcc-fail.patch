@@ -1,0 +1,16 @@
+2001-06-05  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/ia64.h (AVOID_CCMODE_COPIES): Define.
+
+--- gcc/config/ia64/ia64.h.jj	Fri Jun  1 09:38:32 2001
++++ gcc/config/ia64/ia64.h	Tue Jun  5 09:14:58 2001
+@@ -848,7 +848,8 @@ while (0)
+    registers.  You should only define this macro if support fo copying to/from
+    CCmode is incomplete.  */
+ /* ??? CCmode copies are very expensive, so we might want this defined.  */
+-/* #define AVOID_CCMODE_COPIES */
++/* This needs to be defined because movcc expand will fail before reload.  */
++#define AVOID_CCMODE_COPIES
+ 
+ 
+ /* Handling Leaf Functions */

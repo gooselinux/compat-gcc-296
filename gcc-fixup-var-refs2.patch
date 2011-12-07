@@ -1,0 +1,44 @@
+Fri Aug 18 14:23:18 2000  Richard Kenner  <kenner@vlsi1.ultra.nyu.edu>
+
+	* function.c (fixup_var_refs_1, case MEM): Update CODE after
+	updating X.
+
+2001-02-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/compile/20010226-1.c: New test.
+
+--- gcc/function.c.jj	Thu Feb 22 16:14:20 2001
++++ gcc/function.c	Mon Feb 26 13:18:21 2001
+@@ -1943,6 +1943,7 @@ fixup_var_refs_1 (var, promoted_mode, lo
+ 	    replacement->new = copy_most_rtx (x, var);
+ 
+ 	  *loc = x = replacement->new;
++	  code = GET_CODE (x);
+ 	}
+       break;
+ 
+--- gcc/testsuite/gcc.c-torture/compile/20010226-1.c.jj	Thu Aug 24 11:00:32 2000
++++ gcc/testsuite/gcc.c-torture/compile/20010226-1.c	Mon Feb 26 13:10:54 2001
+@@ -0,0 +1,22 @@
++void f1 (void *);
++void f3 (void *, void (*)(void *));
++void f2 (void *);
++
++int foo (void *a, int b)
++{
++  if (!b)
++    {
++      f1 (a);
++      return 1;
++    }
++  if (b)
++    {
++      void bar (void *c)
++      {
++	if (c == a)
++	  f2 (c);
++      }
++      f3 (a, bar);
++    }
++  return 0;
++}

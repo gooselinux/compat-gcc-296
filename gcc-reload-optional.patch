@@ -1,0 +1,679 @@
+2001-11-12  Jakub Jelinek  <jakub@redhat.com>
+
+	* reload.c (find_reloads): Emit USE resp. CLOBBER insns if not
+	pushing any reloads if needed.
+
+	* gcc.dg/20011024-1.c: New test.
+
+--- gcc/reload.c.jj	Wed Oct 24 21:25:01 2001
++++ gcc/reload.c	Mon Nov 12 12:43:52 2001
+@@ -3621,53 +3621,144 @@ find_reloads (insn, replace, ind_levels,
+ 
+   /* Now record reloads for all the operands that need them.  */
+   for (i = 0; i < noperands; i++)
+-    if (! goal_alternative_win[i])
+-      {
+-	/* Operands that match previous ones have already been handled.  */
+-	if (goal_alternative_matches[i] >= 0)
+-	  ;
+-	/* Handle an operand with a nonoffsettable address
+-	   appearing where an offsettable address will do
+-	   by reloading the address into a base register.
+-
+-	   ??? We can also do this when the operand is a register and
+-	   reg_equiv_mem is not offsettable, but this is a bit tricky,
+-	   so we don't bother with it.  It may not be worth doing.  */
+-	else if (goal_alternative_matched[i] == -1
+-		 && goal_alternative_offmemok[i]
+-		 && GET_CODE (recog_data.operand[i]) == MEM)
+-	  {
+-	    operand_reloadnum[i]
+-	      = push_reload (XEXP (recog_data.operand[i], 0), NULL_RTX,
+-			     &XEXP (recog_data.operand[i], 0), NULL_PTR,
+-			     BASE_REG_CLASS,
+-			     GET_MODE (XEXP (recog_data.operand[i], 0)),
+-			     VOIDmode, 0, 0, i, RELOAD_FOR_INPUT);
+-	    rld[operand_reloadnum[i]].inc
+-	      = GET_MODE_SIZE (GET_MODE (recog_data.operand[i]));
+-
+-	    /* If this operand is an output, we will have made any
+-	       reloads for its address as RELOAD_FOR_OUTPUT_ADDRESS, but
+-	       now we are treating part of the operand as an input, so
+-	       we must change these to RELOAD_FOR_INPUT_ADDRESS.  */
+-
+-	    if (modified[i] == RELOAD_WRITE)
+-	      {
+-		for (j = 0; j < n_reloads; j++)
+-		  {
+-		    if (rld[j].opnum == i)
+-		      {
+-			if (rld[j].when_needed == RELOAD_FOR_OUTPUT_ADDRESS)
+-			  rld[j].when_needed = RELOAD_FOR_INPUT_ADDRESS;
+-			else if (rld[j].when_needed
+-				 == RELOAD_FOR_OUTADDR_ADDRESS)
+-			  rld[j].when_needed = RELOAD_FOR_INPADDR_ADDRESS;
+-		      }
+-		  }
+-	      }
+-	  }
+-	else if (goal_alternative_matched[i] == -1)
+-	  {
++    {
++      if (! goal_alternative_win[i])
++	{
++	  /* Operands that match previous ones have already been handled.  */
++	  if (goal_alternative_matches[i] >= 0)
++	    ;
++	  /* Handle an operand with a nonoffsettable address
++	     appearing where an offsettable address will do
++	     by reloading the address into a base register.
++
++	     ??? We can also do this when the operand is a register and
++	     reg_equiv_mem is not offsettable, but this is a bit tricky,
++	     so we don't bother with it.  It may not be worth doing.  */
++	  else if (goal_alternative_matched[i] == -1
++		   && goal_alternative_offmemok[i]
++		   && GET_CODE (recog_data.operand[i]) == MEM)
++	    {
++	      operand_reloadnum[i]
++		= push_reload (XEXP (recog_data.operand[i], 0), NULL_RTX,
++			       &XEXP (recog_data.operand[i], 0), NULL_PTR,
++			       BASE_REG_CLASS,
++			       GET_MODE (XEXP (recog_data.operand[i], 0)),
++			       VOIDmode, 0, 0, i, RELOAD_FOR_INPUT);
++	      rld[operand_reloadnum[i]].inc
++		= GET_MODE_SIZE (GET_MODE (recog_data.operand[i]));
++
++	      /* If this operand is an output, we will have made any
++		 reloads for its address as RELOAD_FOR_OUTPUT_ADDRESS, but
++		 now we are treating part of the operand as an input, so
++		 we must change these to RELOAD_FOR_INPUT_ADDRESS.  */
++
++	      if (modified[i] == RELOAD_WRITE)
++		{
++		  for (j = 0; j < n_reloads; j++)
++		    {
++		      if (rld[j].opnum == i)
++			{
++			  if (rld[j].when_needed == RELOAD_FOR_OUTPUT_ADDRESS)
++			    rld[j].when_needed = RELOAD_FOR_INPUT_ADDRESS;
++			  else if (rld[j].when_needed
++				   == RELOAD_FOR_OUTADDR_ADDRESS)
++			    rld[j].when_needed = RELOAD_FOR_INPADDR_ADDRESS;
++			}
++		    }
++		}
++	    }
++	  else if (goal_alternative_matched[i] == -1)
++	    {
++	      operand_reloadnum[i]
++		= push_reload ((modified[i] != RELOAD_WRITE
++				? recog_data.operand[i] : 0),
++			       (modified[i] != RELOAD_READ
++				? recog_data.operand[i] : 0),
++			       (modified[i] != RELOAD_WRITE
++				? recog_data.operand_loc[i] : 0),
++			       (modified[i] != RELOAD_READ
++				? recog_data.operand_loc[i] : 0),
++			       (enum reg_class) goal_alternative[i],
++			       (modified[i] == RELOAD_WRITE
++				? VOIDmode : operand_mode[i]),
++			       (modified[i] == RELOAD_READ
++				? VOIDmode : operand_mode[i]),
++			       (insn_code_number < 0 ? 0
++				: insn_data[insn_code_number].operand[i].strict_low),
++			       0, i, operand_type[i]);
++	    }
++	  /* In a matching pair of operands, one must be input only
++	     and the other must be output only.
++	     Pass the input operand as IN and the other as OUT.  */
++	  else if (modified[i] == RELOAD_READ
++		   && modified[goal_alternative_matched[i]] == RELOAD_WRITE)
++	    {
++	      operand_reloadnum[i]
++		= push_reload (recog_data.operand[i],
++			       recog_data.operand[goal_alternative_matched[i]],
++			       recog_data.operand_loc[i],
++			       recog_data.operand_loc[goal_alternative_matched[i]],
++			       (enum reg_class) goal_alternative[i],
++			       operand_mode[i],
++			       operand_mode[goal_alternative_matched[i]],
++			       0, 0, i, RELOAD_OTHER);
++	      operand_reloadnum[goal_alternative_matched[i]] = output_reloadnum;
++	    }
++	  else if (modified[i] == RELOAD_WRITE
++		   && modified[goal_alternative_matched[i]] == RELOAD_READ)
++	    {
++	      operand_reloadnum[goal_alternative_matched[i]]
++		= push_reload (recog_data.operand[goal_alternative_matched[i]],
++			       recog_data.operand[i],
++			       recog_data.operand_loc[goal_alternative_matched[i]],
++			       recog_data.operand_loc[i],
++			       (enum reg_class) goal_alternative[i],
++			       operand_mode[goal_alternative_matched[i]],
++			       operand_mode[i],
++			       0, 0, i, RELOAD_OTHER);
++	      operand_reloadnum[i] = output_reloadnum;
++	    }
++	  else if (insn_code_number >= 0)
++	    abort ();
++	  else
++	    {
++	      error_for_asm (insn, "inconsistent operand constraints in an `asm'");
++	      /* Avoid further trouble with this insn.  */
++	      PATTERN (insn) = gen_rtx_USE (VOIDmode, const0_rtx);
++	      n_reloads = 0;
++	      return 0;
++	    }
++	}
++      else if (goal_alternative_matched[i] < 0
++	       && goal_alternative_matches[i] < 0
++	       && optimize)
++	{
++	  /* For each non-matching operand that's a MEM or a pseudo-register
++	     that didn't get a hard register, make an optional reload.
++	     This may get done even if the insn needs no reloads otherwise.  */
++
++	  rtx operand = recog_data.operand[i];
++
++	  while (GET_CODE (operand) == SUBREG)
++	    operand = SUBREG_REG (operand);
++	  if ((GET_CODE (operand) == MEM
++	       || (GET_CODE (operand) == REG
++		   && REGNO (operand) >= FIRST_PSEUDO_REGISTER))
++	      /* If this is only for an output, the optional reload would not
++		 actually cause us to use a register now, just note that
++		 something is stored here.  */
++	      && ((enum reg_class) goal_alternative[i] != NO_REGS
++		  || modified[i] == RELOAD_WRITE)
++	      && ! no_input_reloads
++	      /* An optional output reload might allow to delete INSN later.
++		 We mustn't make in-out reloads on insns that are not permitted
++		 output reloads.
++		 If this is an asm, we can't delete it; we must not even call
++		 push_reload for an optional output reload in this case,
++		 because we can't be sure that the constraint allows a register,
++		 and push_reload verifies the constraints for asms.  */
++	      && (modified[i] == RELOAD_READ
++		  || (! no_output_reloads && ! this_insn_is_asm)))
+ 	    operand_reloadnum[i]
+ 	      = push_reload ((modified[i] != RELOAD_WRITE
+ 			      ? recog_data.operand[i] : 0),
+@@ -3684,150 +3775,69 @@ find_reloads (insn, replace, ind_levels,
+ 			      ? VOIDmode : operand_mode[i]),
+ 			     (insn_code_number < 0 ? 0
+ 			      : insn_data[insn_code_number].operand[i].strict_low),
+-			     0, i, operand_type[i]);
+-	  }
+-	/* In a matching pair of operands, one must be input only
+-	   and the other must be output only.
+-	   Pass the input operand as IN and the other as OUT.  */
+-	else if (modified[i] == RELOAD_READ
+-		 && modified[goal_alternative_matched[i]] == RELOAD_WRITE)
+-	  {
+-	    operand_reloadnum[i]
+-	      = push_reload (recog_data.operand[i],
+-			     recog_data.operand[goal_alternative_matched[i]],
+-			     recog_data.operand_loc[i],
+-			     recog_data.operand_loc[goal_alternative_matched[i]],
+-			     (enum reg_class) goal_alternative[i],
+-			     operand_mode[i],
+-			     operand_mode[goal_alternative_matched[i]],
+-			     0, 0, i, RELOAD_OTHER);
+-	    operand_reloadnum[goal_alternative_matched[i]] = output_reloadnum;
+-	  }
+-	else if (modified[i] == RELOAD_WRITE
+-		 && modified[goal_alternative_matched[i]] == RELOAD_READ)
+-	  {
+-	    operand_reloadnum[goal_alternative_matched[i]]
+-	      = push_reload (recog_data.operand[goal_alternative_matched[i]],
++			     1, i, operand_type[i]);
++	}
++      else if (goal_alternative_matches[i] >= 0
++	       && goal_alternative_win[goal_alternative_matches[i]]
++	       && modified[i] == RELOAD_READ
++	       && modified[goal_alternative_matches[i]] == RELOAD_WRITE
++	       && ! no_input_reloads && ! no_output_reloads
++	       && optimize)
++	{
++	  /* Similarly, make an optional reload for a pair of matching
++	     objects that are in MEM or a pseudo that didn't get a hard reg.  */
++
++	  rtx operand = recog_data.operand[i];
++
++	  while (GET_CODE (operand) == SUBREG)
++	    operand = SUBREG_REG (operand);
++	  if ((GET_CODE (operand) == MEM
++	       || (GET_CODE (operand) == REG
++		   && REGNO (operand) >= FIRST_PSEUDO_REGISTER))
++	      && ((enum reg_class) goal_alternative[goal_alternative_matches[i]]
++		  != NO_REGS))
++	    operand_reloadnum[i] = operand_reloadnum[goal_alternative_matches[i]]
++	      = push_reload (recog_data.operand[goal_alternative_matches[i]],
+ 			     recog_data.operand[i],
+-			     recog_data.operand_loc[goal_alternative_matched[i]],
++			     recog_data.operand_loc[goal_alternative_matches[i]],
+ 			     recog_data.operand_loc[i],
+-			     (enum reg_class) goal_alternative[i],
+-			     operand_mode[goal_alternative_matched[i]],
++			     (enum reg_class) goal_alternative[goal_alternative_matches[i]],
++			     operand_mode[goal_alternative_matches[i]],
+ 			     operand_mode[i],
+-			     0, 0, i, RELOAD_OTHER);
+-	    operand_reloadnum[i] = output_reloadnum;
+-	  }
+-	else if (insn_code_number >= 0)
+-	  abort ();
+-	else
+-	  {
+-	    error_for_asm (insn, "inconsistent operand constraints in an `asm'");
+-	    /* Avoid further trouble with this insn.  */
+-	    PATTERN (insn) = gen_rtx_USE (VOIDmode, const0_rtx);
+-	    n_reloads = 0;
+-	    return 0;
+-	  }
+-      }
+-    else if (goal_alternative_matched[i] < 0
+-	     && goal_alternative_matches[i] < 0
+-	     && optimize)
+-      {
+-	/* For each non-matching operand that's a MEM or a pseudo-register
+-	   that didn't get a hard register, make an optional reload.
+-	   This may get done even if the insn needs no reloads otherwise.  */
+-
+-	rtx operand = recog_data.operand[i];
+-
+-	while (GET_CODE (operand) == SUBREG)
+-	  operand = SUBREG_REG (operand);
+-	if ((GET_CODE (operand) == MEM
+-	     || (GET_CODE (operand) == REG
+-		 && REGNO (operand) >= FIRST_PSEUDO_REGISTER))
+-	    /* If this is only for an output, the optional reload would not
+-	       actually cause us to use a register now, just note that
+-	       something is stored here.  */
+-	    && ((enum reg_class) goal_alternative[i] != NO_REGS
+-		|| modified[i] == RELOAD_WRITE)
+-	    && ! no_input_reloads
+-	    /* An optional output reload might allow to delete INSN later.
+-	       We mustn't make in-out reloads on insns that are not permitted
+-	       output reloads.
+-	       If this is an asm, we can't delete it; we must not even call
+-	       push_reload for an optional output reload in this case,
+-	       because we can't be sure that the constraint allows a register,
+-	       and push_reload verifies the constraints for asms.  */
+-	    && (modified[i] == RELOAD_READ
+-		|| (! no_output_reloads && ! this_insn_is_asm)))
+-	  operand_reloadnum[i]
+-	    = push_reload ((modified[i] != RELOAD_WRITE
+-			    ? recog_data.operand[i] : 0),
+-			   (modified[i] != RELOAD_READ
+-			    ? recog_data.operand[i] : 0),
+-			   (modified[i] != RELOAD_WRITE
+-			    ? recog_data.operand_loc[i] : 0),
+-			   (modified[i] != RELOAD_READ
+-			    ? recog_data.operand_loc[i] : 0),
+-			   (enum reg_class) goal_alternative[i],
+-			   (modified[i] == RELOAD_WRITE
+-			    ? VOIDmode : operand_mode[i]),
+-			   (modified[i] == RELOAD_READ
+-			    ? VOIDmode : operand_mode[i]),
+-			   (insn_code_number < 0 ? 0
+-			    : insn_data[insn_code_number].operand[i].strict_low),
+-			   1, i, operand_type[i]);
+-	/* If a memory reference remains (either as a MEM or a pseudo that
+-	   did not get a hard register), yet we can't make an optional
+-	   reload, check if this is actually a pseudo register reference;
+-	   we then need to emit a USE and/or a CLOBBER so that reload
+-	   inheritance will do the right thing.  */
+-	else if (replace
+-		 && (GET_CODE (operand) == MEM
+-		     || (GET_CODE (operand) == REG
+-			 && REGNO (operand) >= FIRST_PSEUDO_REGISTER
+-			 && reg_renumber [REGNO (operand)] < 0)))
+-	  {
+-	    operand = *recog_data.operand_loc[i];
+-
+-	    while (GET_CODE (operand) == SUBREG)
+-	      operand = SUBREG_REG (operand);
+-	    if (GET_CODE (operand) == REG)
+-	      {
+-		if (modified[i] != RELOAD_WRITE)
+-		  emit_insn_before (gen_rtx_USE (VOIDmode, operand), insn);
+-		if (modified[i] != RELOAD_READ)
+-		  emit_insn_after (gen_rtx_CLOBBER (VOIDmode, operand), insn);
+-	      }
+-	  }
+-      }
+-    else if (goal_alternative_matches[i] >= 0
+-	     && goal_alternative_win[goal_alternative_matches[i]]
+-	     && modified[i] == RELOAD_READ
+-	     && modified[goal_alternative_matches[i]] == RELOAD_WRITE
+-	     && ! no_input_reloads && ! no_output_reloads
+-	     && optimize)
+-      {
+-	/* Similarly, make an optional reload for a pair of matching
+-	   objects that are in MEM or a pseudo that didn't get a hard reg.  */
+-
+-	rtx operand = recog_data.operand[i];
+-
+-	while (GET_CODE (operand) == SUBREG)
+-	  operand = SUBREG_REG (operand);
+-	if ((GET_CODE (operand) == MEM
+-	     || (GET_CODE (operand) == REG
+-		 && REGNO (operand) >= FIRST_PSEUDO_REGISTER))
+-	    && ((enum reg_class) goal_alternative[goal_alternative_matches[i]]
+-		!= NO_REGS))
+-	  operand_reloadnum[i] = operand_reloadnum[goal_alternative_matches[i]]
+-	    = push_reload (recog_data.operand[goal_alternative_matches[i]],
+-			   recog_data.operand[i],
+-			   recog_data.operand_loc[goal_alternative_matches[i]],
+-			   recog_data.operand_loc[i],
+-			   (enum reg_class) goal_alternative[goal_alternative_matches[i]],
+-			   operand_mode[goal_alternative_matches[i]],
+-			   operand_mode[i],
+-			   0, 1, goal_alternative_matches[i], RELOAD_OTHER);
+-      }
++			     0, 1, goal_alternative_matches[i], RELOAD_OTHER);
++	}
++
++      /* If a memory reference remains (either as a MEM or a pseudo that
++	 did not get a hard register), yet we can't make an optional
++	 reload, check if this is actually a pseudo register reference;
++	 we then need to emit a USE and/or a CLOBBER so that reload
++	 inheritance will do the right thing.  */
++      if (operand_reloadnum[i] == -1 && replace)
++	{
++	  rtx operand = recog_data.operand[i];
++
++	  while (GET_CODE (operand) == SUBREG)
++	    operand = SUBREG_REG (operand);
++	  
++	  if (GET_CODE (operand) == MEM
++	      || (GET_CODE (operand) == REG
++		  && REGNO (operand) >= FIRST_PSEUDO_REGISTER
++		  && reg_renumber [REGNO (operand)] < 0))
++	    {
++	      operand = *recog_data.operand_loc[i];
++
++	      while (GET_CODE (operand) == SUBREG)
++		operand = SUBREG_REG (operand);
++	      if (GET_CODE (operand) == REG)
++		{
++		  if (modified[i] != RELOAD_WRITE)
++		    emit_insn_before (gen_rtx_USE (VOIDmode, operand), insn);
++		  if (modified[i] != RELOAD_READ)
++		    emit_insn_after (gen_rtx_CLOBBER (VOIDmode, operand), insn);
++		}
++	    }
++	}
++    }
+ 
+   /* Perform whatever substitutions on the operands we are supposed
+      to make due to commutativity or replacement of registers
+--- gcc/testsuite/gcc.dg/20011024-1.c.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/gcc.dg/20011024-1.c	Fri Oct 19 18:33:49 2001
+@@ -0,0 +1,264 @@
++/* { dg-do run { target i?86-*-* } } */
++/* { dg-options "-O2 -fomit-frame-pointer -march=i686" } */
++
++typedef struct {
++  void *s1a;
++} s1;
++typedef struct {
++  unsigned int s2a;
++  unsigned long long s2b;
++  unsigned int s2c;
++  unsigned int s2d;
++  unsigned short s2e;
++  unsigned char s2f;
++  s1 *s2g;
++  unsigned char s2h;
++} s2;
++typedef struct
++{
++  unsigned int s3a;
++  unsigned int s3b;
++  unsigned int s3c;
++  unsigned int s3d;
++  unsigned int s3e[2];
++  unsigned int s3f[3];
++  unsigned int s3g;
++  unsigned int s3h;
++  unsigned int s3i;
++  unsigned int s3j;
++  unsigned int s3k;
++} s3;
++typedef struct
++{
++  unsigned int s4a;
++  unsigned int s4b;
++  unsigned int s4c;
++  unsigned int s4d;
++  unsigned int s4e;
++  unsigned int s4f;
++  unsigned int s4g;
++  unsigned int s4h;
++  unsigned int s4i;
++  unsigned int s4j;
++  unsigned int s4k[64];
++} s4;
++typedef struct
++{
++  unsigned int s5a;
++  unsigned int s5b;
++} s5;
++typedef struct
++{
++  unsigned int s6a;
++  unsigned short s6b;
++  unsigned short s6c;
++  unsigned int s6d;
++  unsigned int s6e;
++} s6;
++typedef struct
++{
++  unsigned long long s7a;
++  unsigned int s7b;
++} s7;
++
++char buffer[1024];
++
++void f1 (void *x, int y, unsigned int z)
++{
++}
++
++static inline const unsigned int f2 (unsigned int x)
++{
++  asm("" : "=r" (x) : "0" (x));
++  return x;
++}
++
++int f3 (s2 *x, void *y, long long z, s1 **p)
++{
++  return 0;
++}
++
++void *f4(s2 *x, unsigned int y)
++{
++  return 0;
++}
++
++int f5(void *x)
++{
++  return 0;
++}
++
++int f6(s2 *x, s1 *y)
++{
++  static int i;
++
++  return i++;
++}
++
++s1 *foo (void *x, long long y, unsigned int z, int v)
++{
++  static s1 a;
++  static int b;
++
++  if (v != 0x2204 || x != buffer)
++    abort ();
++  if (y != 0x2c5e780000000200LL + b)
++    abort ();
++  b += 0x200;
++  a.s1a = (char *) x + 32;
++  return &a;
++}
++
++int test (s2 *x, s7 *y)
++{
++  s1 *v1;
++  s3 *v3;
++  s4 *v4;
++  s5 *v5;
++  s6 *v6;
++  unsigned int a, b, c;
++  int d, e, f, g, h, i;
++  unsigned int j, k;
++  unsigned long long l, m, n;
++  void *o;
++
++  l = y->s7a;
++  h = y->s7b;
++  f = h - x->s2f;
++  g = f3 (x, x->s2g, (l << x->s2h) - 1, &v1);
++  if (g)
++    return g;
++
++  m = l;
++  j = m + 1;
++  m = y->s7a - x->s2b;
++  k = x->s2d;
++  o = f4 (x, 14);
++  g = f5 (o);
++  if (g)
++    return g;
++
++  i = ((unsigned long long) x->s2e + 511) >> 9;
++  d = x->s2a;
++
++  n = 0;
++  for (a = j - 1; a >= k; a--, m -= b) {
++    v1 = foo (x->s2g->s1a,
++	      ((((unsigned long long) a * x->s2c) << x->s2h) + 1LL) << 9,
++	      i << 9, 0x2204);
++    v3 = (s3 *)v1->s1a;
++    f1 (v3, 0, x->s2e);
++    v3->s3a = 0x58414746;
++    v3->s3a = f2 (v3->s3a);
++    v3->s3b = 1;
++    v3->s3b = f2 (v3->s3b);
++    v3->s3c = a;
++    v3->s3c = f2 (v3->s3c);
++    if (a == j - 1)
++      b = l - a * (unsigned long long) x->s2c;
++    else
++      b = x->s2c;
++    v3->s3d = b;
++    v3->s3d = f2 (v3->s3d);
++    v3->s3e[0] = (3LL >> x->s2h) + 1;
++    v3->s3e[0] = f2 (v3->s3e[0]);
++    v3->s3e[1] = (3LL >> x->s2h) + 2;
++    v3->s3e[1] = f2 (v3->s3e[1]);
++    v3->s3f[0] = 1;
++    v3->s3f[0] = f2 (v3->s3f[0]);
++    v3->s3f[1] = 1;
++    v3->s3f[1] = f2 (v3->s3f[1]);
++    v3->s3g = 0;
++    v3->s3g = f2 (v3->s3g);
++    v3->s3h = 512 / sizeof (unsigned int) - 1;
++    v3->s3h = f2 (v3->s3h);
++    v3->s3i = 0;
++    v3->s3i = f2 (v3->s3i);
++    c = b - ((unsigned int) (3LL >> x->s2h)) - 4;
++    v3->s3j = c;
++    v3->s3j = f2 (v3->s3j);
++    v3->s3k = c;
++    v3->s3k = f2 (v3->s3k);
++    g = f6 (x, v1);
++    if (g)
++      goto l0;
++
++    v1 = foo (x->s2g->s1a,
++	      ((((unsigned long long) a * x->s2c) << x->s2h) + 2LL) << 9,
++	      i << 9, 0x2204);
++    v4 = (s4 *)v1->s1a;
++    f1 (v4, 0, x->s2e);
++    v4->s4a = 0x58414749;
++    v4->s4a = f2 (v4->s4a);
++    v4->s4b = 1;
++    v4->s4b = f2 (v4->s4b);
++    v4->s4c = a;
++    v4->s4c = f2 (v4->s4c);
++    v4->s4d = b;
++    v4->s4d = f2 (v4->s4d);
++    v4->s4e = 0;
++    v4->s4e = f2 (v4->s4e);
++    v4->s4f = (3LL >> x->s2h) + 3;
++    v4->s4f = f2 (v4->s4f);
++    v4->s4g = 1;
++    v4->s4g = f2 (v4->s4g);
++    v4->s4h = 0;
++    v4->s4h = f2 (v4->s4h);
++    v4->s4i = -1;
++    v4->s4i = f2 (v4->s4i);
++    v4->s4j = -1;
++    v4->s4j = f2 (v4->s4j);
++    for (e = 0; e < 64; e++)
++      {
++        v4->s4k[e] = -1;
++        v4->s4k[e] = f2 (v4->s4k[e]);
++      }
++    g = f6 (x, v1);
++    if (g)
++      goto l0;
++
++    v1 = foo (x->s2g->s1a,
++	      (((unsigned long long) a * x->s2c
++		+ (unsigned int) ((3LL >> x->s2h) + 1)) << x->s2h) << 9,
++	      (((unsigned long long) d + 511) >> 9) << 9, 0x2204);
++    v6 = (s6 *)v1->s1a;
++    f1 (v6, 0, d);
++    v6->s6a = 0x41425442;
++    v6->s6a = f2 (v6->s6a);
++    v6->s6b = 0;
++    v6->s6b = f2 (v6->s6b);
++    v6->s6c = 1;
++    v6->s6c = f2 (v6->s6c);
++    v6->s6d = -1;
++    v6->s6d = f2 (v6->s6d);
++    v6->s6e = -1;
++    v6->s6e = f2 (v6->s6e);
++    v5 = (s5 *) ((char *) v6 + 24);
++    v5->s5a = (3LL >> x->s2h) + 4;
++    v5->s5a = f2 (v5->s5a);
++    v5->s5b = b - v5->s5a;
++    g = f6 (x, v1);
++    if (g)
++      goto l0;
++  }
++  return 0;
++
++l0:
++  return g;
++}
++
++s2 a;
++s7 b;
++s1 c;
++
++int main (void)
++{
++  b.s7a = 66;
++  a.s2c = 0xabcdef;
++  a.s2g = &c;
++  a.s2h = 33;
++  c.s1a = buffer;
++  if (test (&a, &b) != 1)
++    abort ();
++  exit (0);
++}

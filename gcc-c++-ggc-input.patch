@@ -1,0 +1,63 @@
+2000-12-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* input.c (init_input, mark_input_stack): New.
+	* lex.c (init_parse): Call init_input.
+
+--- gcc/cp/input.c.jj	Fri May 12 09:52:57 2000
++++ gcc/cp/input.c	Tue Dec 19 00:59:44 2000
+@@ -68,6 +69,7 @@ extern int yy_get_token ();
+ #endif
+ 
+ extern void feed_input PARAMS ((char *, int, const char *, int));
++extern void init_input PARAMS ((void));
+ extern void put_input PARAMS ((int));
+ extern void put_back PARAMS ((int));
+ extern int getch PARAMS ((void));
+@@ -76,6 +78,7 @@ extern int input_redirected PARAMS ((voi
+ static inline struct input_source * allocate_input PARAMS ((void));
+ static inline void free_input PARAMS ((struct input_source *));
+ static inline void end_input PARAMS ((void));
++static void mark_input_stack PARAMS ((void *));
+ 
+ static inline struct input_source *
+ allocate_input ()
+@@ -236,5 +239,29 @@ input_redirected ()
+   return CPP_BUFFER(&parse_in)->manual_pop;
+ #else
+   return input != 0;
++#endif
++}
++
++#if !USE_CPPLIB
++static void
++mark_input_stack (arg)
++     void *arg;
++{
++  struct input_source *inp;
++       
++  inp = *(struct input_source **) arg;
++  while (inp)
++    {
++      ggc_mark_string (inp->filename);
++      inp = inp->next;
++    }
++}
++#endif
++
++void
++init_input ()
++{
++#if !USE_CPPLIB
++  ggc_add_root (&input, 1, sizeof(input), mark_input_stack);
+ #endif
+ }
+--- gcc/cp/lex.c.jj	Thu Jul 27 19:46:50 2000
++++ gcc/cp/lex.c	Tue Dec 19 01:00:26 2000
+@@ -712,6 +712,7 @@ init_parse (filename)
+   ggc_add_tree_root (&filename_times, 1);
+   ggc_add_root (&impl_file_chain, 1, sizeof (impl_file_chain),
+ 		mark_impl_file_chain);
++  init_input ();
+   return filename;
+ }
+ 

@@ -1,0 +1,24 @@
+2004-08-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* configure: Replace trap 0 with trap '' 0.
+
+--- configure.jj	2000-07-24 11:04:14.000000000 +0200
++++ configure	2004-08-18 12:50:01.585659378 +0200
+@@ -688,7 +688,7 @@ fi
+ if test -f skip-this-dir; then
+ 	# Perform the same cleanup as the trap handler, minus the "exit 1" of course,
+ 	# and reset the trap handler.
+-	trap 0
++	trap - 0
+ 	rm -f Makefile* ${tmpfile}.com ${tmpfile}.tgt ${tmpfile}.hst ${tmpfile}.pos
+ 	# Execute the final clean-up actions
+ 	${config_shell} skip-this-dir
+@@ -1605,7 +1605,7 @@ fi
+ # Perform the same cleanup as the trap handler, minus the "exit 1" of course,
+ # and reset the trap handler.
+ rm -f ${tmpfile}.com ${tmpfile}.tgt ${tmpfile}.hst ${tmpfile}.pos
+-trap 0
++trap - 0
+ 
+ exit 0
+ 

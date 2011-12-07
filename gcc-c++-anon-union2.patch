@@ -1,0 +1,41 @@
+2001-10-18  Jakub Jelinek  <jakub@redhat.com>
+
+	* expr.c (expand_expr): When checking promoted value, use
+	DECL_MODE (exp) and not mode.
+
+--- gcc/expr.c.jj	Fri Oct 12 19:23:07 2001
++++ gcc/expr.c	Thu Oct 18 13:06:51 2001
+@@ -6379,7 +6379,7 @@ expand_expr (exp, target, tmode, modifie
+ 	 but mark it so that we know that it was already extended.  */
+ 
+       if (GET_CODE (DECL_RTL (exp)) == REG
+-	  && GET_MODE (DECL_RTL (exp)) != mode)
++	  && GET_MODE (DECL_RTL (exp)) != DECL_MODE (exp))
+ 	{
+ 	  /* Get the signedness used for this variable.  Ensure we get the
+ 	     same mode we got when the variable was declared.  */
+--- gcc/testsuite/g++.old-deja/g++.other/anon-union.C.jj	Thu Oct 18 13:09:36 2001
++++ gcc/testsuite/g++.old-deja/g++.other/anon-union.C	Thu Oct 18 13:09:50 2001
+@@ -0,0 +1,22 @@
++// Build don't link:
++// Special g++ Options: -O2
++
++int foo ();
++double bar (void)
++{
++  union
++  {
++    char a[8];
++    double b;
++  };
++
++  a[0] = foo ();
++  a[1] = foo ();
++  a[2] = foo ();
++  a[3] = foo ();
++  a[4] = foo ();
++  a[5] = foo ();
++  a[6] = foo ();
++  a[7] = foo ();
++  return b;
++}

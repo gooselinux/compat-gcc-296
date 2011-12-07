@@ -1,0 +1,18 @@
+2001-02-03  Jakub Jelinek  <jakub@redhat.com>
+
+	* cppinit.c (append_include_chain): Honor NO_IMPLICIT_EXTERN_C.
+
+--- gcc/cppinit.c.jj	Tue Jan 23 20:41:52 2001
++++ gcc/cppinit.c	Fri Feb  2 15:56:15 2001
+@@ -237,7 +237,11 @@ append_include_chain (pfile, dir, path, 
+   new->ino  = st.st_ino;
+   new->dev  = st.st_dev;
+   if (path == SYSTEM)
++#ifdef NO_IMPLICIT_EXTERN_C
++    new->sysp = 1;
++#else
+     new->sysp = cxx_aware ? 1 : 2;
++#endif
+   else
+     new->sysp = 0;
+   new->name_map = NULL;

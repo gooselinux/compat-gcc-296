@@ -1,0 +1,25 @@
+2000-11-09  Richard Henderson  <rth@redhat.com>
+
+	* fold-const.c (fold): Compare TYPE_MAIN_VARIANT rather than
+	the types themselves to discover type equivalence.
+
+*** gcc/fold-const.c	2000/11/07 22:49:52	1.138
+--- gcc/fold-const.c	2000/11/09 23:56:27
+*************** fold (expr)
+*** 5099,5105 ****
+  	     handled below, if we are converting something to its own
+  	     type via an object of identical or wider precision, neither
+  	     conversion is needed.  */
+! 	  if (inside_type == final_type
+  	      && ((inter_int && final_int) || (inter_float && final_float))
+  	      && inter_prec >= final_prec)
+  	    return TREE_OPERAND (TREE_OPERAND (t, 0), 0);
+--- 5099,5105 ----
+  	     handled below, if we are converting something to its own
+  	     type via an object of identical or wider precision, neither
+  	     conversion is needed.  */
+! 	  if (TYPE_MAIN_VARIANT (inside_type) == TYPE_MAIN_VARIANT (final_type)
+  	      && ((inter_int && final_int) || (inter_float && final_float))
+  	      && inter_prec >= final_prec)
+  	    return TREE_OPERAND (TREE_OPERAND (t, 0), 0);
+

@@ -1,0 +1,65 @@
+2001-04-04  Diego Novillo  <dnovillo@redhat.com>
+
+	* simplify-rtx.c (simplify_binary_operation): Check for overflow
+	when folding integer division and modulo operations.
+
+	* testsuite/gcc.c-torture/compile/20010404-1.c: New file.
+
+--- gcc/simplify-rtx.c.jj	2001/03/07 19:29:36	1.44
++++ gcc/simplify-rtx.c	2001/04/05 02:27:45	1.45
+@@ -1407,25 +1407,33 @@ simplify_binary_operation (code, mode, o
+       break;
+ 
+     case DIV:
+-      if (arg1s == 0)
++      if (arg1s == 0
++	  || (arg0s == (HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1)
++	      && arg1s == -1))
+ 	return 0;
+       val = arg0s / arg1s;
+       break;
+ 
+     case MOD:
+-      if (arg1s == 0)
++      if (arg1s == 0
++	  || (arg0s == (HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1)
++	      && arg1s == -1))
+ 	return 0;
+       val = arg0s % arg1s;
+       break;
+ 
+     case UDIV:
+-      if (arg1 == 0)
++      if (arg1 == 0
++	  || (arg0s == (HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1)
++	      && arg1s == -1))
+ 	return 0;
+       val = (unsigned HOST_WIDE_INT) arg0 / arg1;
+       break;
+ 
+     case UMOD:
+-      if (arg1 == 0)
++      if (arg1 == 0
++	  || (arg0s == (HOST_WIDE_INT) 1 << (HOST_BITS_PER_WIDE_INT - 1)
++	      && arg1s == -1))
+ 	return 0;
+       val = (unsigned HOST_WIDE_INT) arg0 % arg1;
+       break;
+--- gcc/testsuite/gcc.c-torture/compile/20010404-1.c.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010404-1.c	Thu Apr  5 04:27:47 2001
+@@ -0,0 +1,15 @@
++/* This testcase caused a floating point exception in the compiler when
++   compiled with -O2. The crash occurs when trying to simplify division
++   and modulo operations.  */
++
++#include <limits.h>
++
++extern void bar (int);
++
++void foo ()
++{
++  int a = INT_MIN;
++  int b = -1;
++  bar (a / b);
++  bar (a % b);
++}

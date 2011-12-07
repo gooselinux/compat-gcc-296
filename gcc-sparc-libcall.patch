@@ -1,0 +1,53 @@
+2001-11-19  Jakub Jelinek  <jakub@redhat.com>
+
+	* optabs.c (expand_binop, expand_unop, expand_complex_abs,
+	expand_float, expand_fix): Always pass 0 as fn_type to
+	emit_library_call_value if calling expand_libcall_block afterwards.
+
+--- gcc/optabs.c.jj	Thu Jun  1 11:56:36 2000
++++ gcc/optabs.c	Tue Nov 20 00:00:18 2001
+@@ -1691,7 +1691,7 @@ expand_binop (mode, binoptab, op0, op1, 
+       /* Pass 1 for NO_QUEUE so we don't lose any increments
+ 	 if the libcall is cse'd or moved.  */
+       value = emit_library_call_value (binoptab->handlers[(int) mode].libfunc,
+-				       NULL_RTX, 1, mode, 2,
++				       NULL_RTX, 0, mode, 2,
+ 				       op0, mode, op1x, op1_mode);
+ 
+       insns = get_insns ();
+@@ -2174,7 +2174,7 @@ expand_unop (mode, unoptab, op0, target,
+       /* Pass 1 for NO_QUEUE so we don't lose any increments
+ 	 if the libcall is cse'd or moved.  */
+       value = emit_library_call_value (unoptab->handlers[(int) mode].libfunc,
+-				       NULL_RTX, 1, mode, 1, op0, mode);
++				       NULL_RTX, 0, mode, 1, op0, mode);
+       insns = get_insns ();
+       end_sequence ();
+ 
+@@ -2492,7 +2492,7 @@ expand_complex_abs (mode, op0, target, u
+       /* Pass 1 for NO_QUEUE so we don't lose any increments
+ 	 if the libcall is cse'd or moved.  */
+       value = emit_library_call_value (abs_optab->handlers[(int) mode].libfunc,
+-				       NULL_RTX, 1, submode, 1, op0, mode);
++				       NULL_RTX, 0, submode, 1, op0, mode);
+       insns = get_insns ();
+       end_sequence ();
+ 
+@@ -4101,7 +4101,7 @@ expand_float (to, from, unsignedp)
+ 
+       start_sequence ();
+ 
+-      value = emit_library_call_value (libfcn, NULL_RTX, 1,
++      value = emit_library_call_value (libfcn, NULL_RTX, 0,
+ 				       GET_MODE (to),
+ 				       1, from, GET_MODE (from));
+       insns = get_insns ();
+@@ -4335,7 +4335,7 @@ expand_fix (to, from, unsignedp)
+ 
+       start_sequence ();
+ 
+-      value = emit_library_call_value (libfcn, NULL_RTX, 1, GET_MODE (to),
++      value = emit_library_call_value (libfcn, NULL_RTX, 0, GET_MODE (to),
+ 
+ 				       1, from, GET_MODE (from));
+       insns = get_insns ();

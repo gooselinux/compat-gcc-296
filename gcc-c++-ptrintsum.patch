@@ -1,0 +1,59 @@
+2002-02-27  Jakub Jelinek  <jakub@redhat.com>
+
+	RH #58746, PR c++/4401
+	* typeck.c (pointer_int_sum): Don't apply distributive law if
+	intop is unsigned and with different precision.
+
+	* g++.old-deja/g++.other/ptrintsum1.C: New test.
+
+--- gcc/cp/typeck.c.jj	Thu Feb 14 22:42:48 2002
++++ gcc/cp/typeck.c	Wed Feb 27 12:13:01 2002
+@@ -4149,7 +4149,16 @@ pointer_int_sum (resultcode, ptrop, into
+   if ((TREE_CODE (intop) == PLUS_EXPR || TREE_CODE (intop) == MINUS_EXPR)
+       && ! TREE_CONSTANT (intop)
+       && TREE_CONSTANT (TREE_OPERAND (intop, 1))
+-      && TREE_CONSTANT (size_exp))
++      && TREE_CONSTANT (size_exp)
++      /* If the constant comes from pointer subtraction,
++	 skip this optimization--it would cause an error.  */
++      && TREE_CODE (TREE_TYPE (TREE_OPERAND (intop, 0))) == INTEGER_TYPE
++      /* If the constant is unsigned, and smaller than the pointer size,
++	 then we must skip this optimization.  This is because it could cause
++	 an overflow error if the constant is negative but INTOP is not.  */
++      && (! TREE_UNSIGNED (TREE_TYPE (intop))
++	  || (TYPE_PRECISION (TREE_TYPE (intop))
++	      == TYPE_PRECISION (TREE_TYPE (ptrop)))))
+     {
+       enum tree_code subcode = resultcode;
+       if (TREE_CODE (intop) == MINUS_EXPR)
+--- gcc/testsuite/g++.old-deja/g++.other/ptrintsum1.C.jj	Wed Feb 27 12:14:31 2002
++++ gcc/testsuite/g++.old-deja/g++.other/ptrintsum1.C	Wed Feb 27 12:15:17 2002
+@@ -0,0 +1,28 @@
++// PR c++/4401
++// This testcase was miscompiled on 64-bit platforms, resulting to
++// operating on a[0x100000000] instead of a[0].
++// Special g++ Options: -O2
++
++char *a;
++char b[] = "AAAA";
++
++extern "C" void abort (void);
++extern "C" void exit (int);
++
++void foo (void)
++{
++  unsigned int i, j;
++
++  i = 2;
++  j = 3;
++  a[i + 1 - j] += i;
++}
++
++int main (void)
++{
++  a = b;
++  foo ();
++  if (b[0] != 'A' + 2)
++    abort ();
++  exit (0);
++}

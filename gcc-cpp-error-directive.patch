@@ -1,0 +1,48 @@
+2000-11-29  Jakub Jelinek  <jakub@redhat.com>
+
+	* cpplib.c (do_error): Handle if cpp_grow_token_buffer is called
+	underneath us.
+	(do_warning): Likewise.
+	(do_pragma_dependency): Likewise.
+
+--- gcc/cpplib.c.jj	Mon Oct 30 23:54:07 2000
++++ gcc/cpplib.c	Wed Nov 29 13:45:55 2000
+@@ -599,9 +599,11 @@ do_error (pfile)
+      cpp_reader *pfile;
+ {
+   U_CHAR *text, *limit;
++  long offset;
+ 
+-  text = pfile->limit;
++  offset = pfile->limit - pfile->token_buffer;
+   _cpp_dump_list (pfile, &pfile->token_list, pfile->first_directive_token, 0);
++  text = pfile->token_buffer + offset;
+   limit = pfile->limit;
+   pfile->limit = text;
+   cpp_error (pfile, "%.*s", (int)(limit - text), text);
+@@ -617,9 +619,11 @@ do_warning (pfile)
+      cpp_reader *pfile;
+ {
+   U_CHAR *text, *limit;
++  long offset;
+ 
+-  text = pfile->limit;
++  offset = pfile->limit - pfile->token_buffer;
+   _cpp_dump_list (pfile, &pfile->token_list, pfile->first_directive_token, 0);
++  text = pfile->token_buffer + offset;
+   limit = pfile->limit;
+   pfile->limit = text;
+   cpp_warning (pfile, "%.*s", (int)(limit - text), text);
+@@ -879,9 +883,11 @@ do_pragma_dependency (pfile)
+       if (msg->type != CPP_EOF)
+ 	{
+ 	  U_CHAR *text, *limit;
++	  long offset;
+ 
+-	  text = pfile->limit;
++	  offset = pfile->limit - pfile->token_buffer;
+ 	  _cpp_dump_list (pfile, &pfile->token_list, msg, 0);
++	  text = pfile->token_buffer + offset;
+ 	  limit = pfile->limit;
+ 	  pfile->limit = text;
+ 	  /* There must be something non-whitespace after. */

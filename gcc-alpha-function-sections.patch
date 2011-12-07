@@ -1,0 +1,68 @@
+2001-07-11  H.J. Lu  <hjl@gnu.org>
+
+	* config/alpha/elf.h (MAKE_DECL_ONE_ONLY): New. Copied from
+	elfos.h.
+	(UNIQUE_SECTION_P): Likewise.
+	(UNIQUE_SECTION): New. Modified from elfos.h.
+
+--- gcc/config/alpha/elf.h.jj	Tue Jul 24 20:41:18 2001
++++ gcc/config/alpha/elf.h	Thu Aug  9 14:12:54 2001
+@@ -527,6 +527,58 @@ void FN ()					\
+     const_section ();							\
+ }
+ 
++#define MAKE_DECL_ONE_ONLY(DECL) (DECL_WEAK (DECL) = 1)
++
++#define UNIQUE_SECTION_P(DECL)   (DECL_ONE_ONLY (DECL))
++
++#define UNIQUE_SECTION(DECL, RELOC)				\
++  do								\
++    {								\
++      int len;							\
++      int sec;							\
++      const char *name;						\
++      char *string;						\
++      const char *prefix;					\
++      static const char *prefixes[/*4*/3][2] =			\
++      {								\
++	{ ".text.",   ".gnu.linkonce.t." },			\
++	{ ".rodata.", ".gnu.linkonce.r." },			\
++	{ ".data.",   ".gnu.linkonce.d." },			\
++	{ ".sdata.",  ".gnu.linkonce.s." }			\
++	/* Do not generate unique sections for uninitialised 	\
++	   data since we do not have support for this in the    \
++	   linker scripts yet...				\
++        ,{ ".bss.",    ".gnu.linkonce.b." }  */			\
++      };							\
++      								\
++      if (TREE_CODE (DECL) == FUNCTION_DECL)			\
++	sec = 0;						\
++  /*  else if (DECL_INITIAL (DECL) == 0				\
++	       || DECL_INITIAL (DECL) == error_mark_node)	\
++        sec =  4; */						\
++      else if (DECL_READONLY_SECTION (DECL, RELOC))		\
++	sec = 1;						\
++      else							\
++	sec = 2;						\
++								\
++      if (sec == 2)						\
++	{							\
++	  int size = int_size_in_bytes (TREE_TYPE (DECL));	\
++	  if (size >= 0 && size <= g_switch_value)		\
++	    ++sec;						\
++	}							\
++      								\
++      name   = IDENTIFIER_POINTER (DECL_ASSEMBLER_NAME (DECL));	\
++      prefix = prefixes[sec][DECL_ONE_ONLY(DECL)];		\
++      len    = strlen (name) + strlen (prefix);			\
++      string = alloca (len + 1);				\
++      								\
++      sprintf (string, "%s%s", prefix, name);			\
++      								\
++      DECL_SECTION_NAME (DECL) = build_string (len, string);	\
++    }								\
++  while (0)
++
+ /* A C statement or statements to switch to the appropriate
+    section for output of RTX in mode MODE.  RTX is some kind
+    of constant in RTL.  The argument MODE is redundant except

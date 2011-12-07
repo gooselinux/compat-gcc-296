@@ -1,0 +1,762 @@
+2001-03-17  Richard Henderson  <rth@redhat.com>
+
+	* dwarf2out.c (lookup_filename): Emit .file if the assembler
+	is generating .debug_line.
+	(dwarf2out_init): Add main_input_filename to the file table first.
+	* configure.in (as_dwarf2_debug_line): Test with file number 1
+	instead of file number 0.
+
+	* dwarf2out.c: Revert most of 2000-11-25 and 2001-01-24 changes.
+	(LN_PROLOG_AS_LABEL, LN_PROLOG_END_LABEL): New.
+	(size_of_line_prolog): Remove.
+	(output_line_info): Compute prologue size via label difference.
+	(lookup_filename): Return "unspecified" for <internal> and <built-in>.
+
+2000-11-26  Ulrich Drepper  <drepper@redhat.com>
+
+	* dwarf2out.c (output_file_names): New function.  Compute minimal
+	combination of directory and file name table and emit them.
+	(output_line_info): Remove code to emit directory and file name
+	table and call output_file_names instead.
+	(file_info_cmp): Helper function to sort directory names.
+
+2000-11-25  Richard Henderson  <rth@redhat.com>
+
+	* dwarf2out.c (file_table, file_table_allocated): Remove.
+	(file_table_allocated): Remove.
+	(struct file_table): New.
+	(decl_file_table, line_file_table): New.
+	(print_dwarf_line_table): Use them.
+	(size_of_line_prolog): Likewise.
+	(output_line_info): Likewise.
+	(add_src_coords_attributes): Likewise.
+	(gen_subprogram_die): Likewise.
+	(gen_variable_die): Likewise.
+	(dwarf2out_add_library_unit_info): Likewise.
+	(dwarf2out_line): Likewise.
+	(lookup_filename): Take a struct file_table argument.
+	(init_file_table): New.
+	(dwarf2out_init): Use it.
+
+--- gcc/dwarf2out.c.dwarf2-filenames	Wed Jun 20 12:14:06 2001
++++ gcc/dwarf2out.c	Wed Jun 20 12:21:29 2001
+@@ -312,6 +312,10 @@
+ #define FDE_AFTER_SIZE_LABEL	"LSFDE"
+ #define FDE_END_LABEL		"LEFDE"
+ #define FDE_LENGTH_LABEL	"LLFDE"
++#define LINE_NUMBER_BEGIN_LABEL	"LSLT"
++#define LINE_NUMBER_END_LABEL	"LELT"
++#define LN_PROLOG_AS_LABEL	"LASLTP"
++#define LN_PROLOG_END_LABEL	"LELTP"
+ 
+ /* Definitions of defaults for various types of primitive assembly language
+    output operations.  These may be overridden from within the tm.h file,
+@@ -545,10 +549,10 @@
+ /* This is similar to the default ASM_OUTPUT_ASCII, except that no trailing
+    newline is produced.  When flag_debug_asm is asserted, we add commentary
+    at the end of the line, so we must avoid output of a newline here.  */
+-#ifndef ASM_OUTPUT_DWARF_STRING
+-#define ASM_OUTPUT_DWARF_STRING(FILE,P) \
++#ifndef ASM_OUTPUT_DWARF_NSTRING
++#define ASM_OUTPUT_DWARF_NSTRING(FILE,P,SLEN) \
+   do {									      \
+-    register int slen = strlen(P);                                            \
++    register int slen = (SLEN);                                               \
+     register const char *p = (P);  	                                      \
+     register int i;					                      \
+     fprintf (FILE, "\t.ascii \"");				              \
+@@ -568,6 +572,8 @@
+   }									      \
+   while (0)
+ #endif
++#define ASM_OUTPUT_DWARF_STRING(FILE,P) \
++  ASM_OUTPUT_DWARF_NSTRING (FILE, P, strlen (P))
+ 
+ /* The DWARF 2 CFA column which tracks the return address.  Normally this
+    is the column for PC, or the first column after all of the hard
+@@ -3122,21 +3128,22 @@
+ /* A list of DIEs with a NULL parent waiting to be relocated.  */
+ static limbo_die_node *limbo_die_list = 0;
+ 
+-/* Pointer to an array of filenames referenced by this compilation unit.  */
+-static char **file_table;
+-
+-/* Total number of entries in the table (i.e. array) pointed to by
+-   `file_table'.  This is the *total* and includes both used and unused
+-   slots.  */
+-static unsigned file_table_allocated;
+-
+-/* Number of entries in the file_table which are actually in use.  */
+-static unsigned file_table_in_use;
++/* Structure used by lookup_filename to manage sets of filenames.  */
++struct file_table
++{
++  char **table;
++  unsigned allocated;
++  unsigned in_use;
++  unsigned last_lookup_index;
++};
+ 
+ /* Size (in elements) of increments by which we may expand the filename
+    table.  */
+ #define FILE_TABLE_INCREMENT 64
+ 
++/* Filenames referenced by this compilation unit. */
++static struct file_table file_table;
++
+ /* Local pointer to the name of the main input file.  Initialized in
+    dwarf2out_init.  */
+ static const char *primary_filename;
+@@ -3351,7 +3358,6 @@
+ static int constant_size		PARAMS ((long unsigned));
+ static unsigned long size_of_die	PARAMS ((dw_die_ref));
+ static void calc_die_sizes		PARAMS ((dw_die_ref));
+-static unsigned long size_of_line_prolog PARAMS ((void));
+ static unsigned long size_of_pubnames	PARAMS ((void));
+ static unsigned long size_of_aranges	PARAMS ((void));
+ static enum dwarf_form value_format	PARAMS ((dw_attr_ref));
+@@ -3365,6 +3371,7 @@
+ static void add_arange			PARAMS ((tree, dw_die_ref));
+ static void output_aranges		PARAMS ((void));
+ static void output_line_info		PARAMS ((void));
++static void output_file_names           PARAMS ((void));
+ static dw_die_ref base_type_die		PARAMS ((tree));
+ static tree root_type			PARAMS ((tree));
+ static int is_base_type			PARAMS ((tree));
+@@ -3442,6 +3449,7 @@
+ static int is_redundant_typedef		PARAMS ((tree));
+ static void gen_decl_die		PARAMS ((tree, dw_die_ref));
+ static unsigned lookup_filename		PARAMS ((const char *));
++static void init_file_table		PARAMS ((void));
+ static void add_incomplete_type		PARAMS ((tree));
+ static void retry_incomplete_types	PARAMS ((void));
+ static void gen_type_die_for_member	PARAMS ((tree, tree, dw_die_ref));
+@@ -4869,7 +4877,7 @@
+     {
+       line_info = &line_info_table[i];
+       fprintf (outfile, "%5d: ", i);
+-      fprintf (outfile, "%-20s", file_table[line_info->dw_file_num]);
++      fprintf (outfile, "%-20s", file_table.table[line_info->dw_file_num]);
+       fprintf (outfile, "%6ld", line_info->dw_line_num);
+       fprintf (outfile, "\n");
+     }
+@@ -5131,45 +5139,6 @@
+     next_die_offset += 1;
+ }
+ 
+-/* Return the size of the line information prolog generated for the
+-   compilation unit.  */
+-
+-static unsigned long
+-size_of_line_prolog ()
+-{
+-  register unsigned long size;
+-  register unsigned long ft_index;
+-
+-  size = DWARF_LINE_PROLOG_HEADER_SIZE;
+-
+-  /* Count the size of the table giving number of args for each
+-     standard opcode.  */
+-  size += DWARF_LINE_OPCODE_BASE - 1;
+-
+-  /* Include directory table is empty (at present).  Count only the
+-     null byte used to terminate the table.  */
+-  size += 1;
+-
+-  for (ft_index = 1; ft_index < file_table_in_use; ++ft_index)
+-    {
+-      /* File name entry.  */
+-      size += size_of_string (file_table[ft_index]);
+-
+-      /* Include directory index.  */
+-      size += size_of_uleb128 (0);
+-
+-      /* Modification time.  */
+-      size += size_of_uleb128 (0);
+-
+-      /* File length in bytes.  */
+-      size += size_of_uleb128 (0);
+-    }
+-
+-  /* Count the file table terminator.  */
+-  size += 1;
+-  return size;
+-}
+-
+ /* Return the size of the .debug_pubnames table  generated for the
+    compilation unit.  */
+ 
+@@ -5781,17 +5750,322 @@
+   fputc ('\n', asm_out_file);
+ }
+ 
++
++/* Data structure containing information about input files.  */
++struct file_info
++{
++  char *path;		/* Complete file name.  */
++  char *fname;		/* File name part.  */
++  int length;		/* Length of entire string.  */
++  int file_idx;		/* Index in input file table.  */
++  int dir_idx;		/* Index in directory table.  */
++};
++
++/* Data structure containing information about directories with source
++   files.  */
++struct dir_info
++{
++  char *path;		/* Path including directory name.  */
++  int length;		/* Path length.  */
++  int prefix;		/* Index of directory entry which is a prefix.  */
++  int count;		/* Number of files in this directory.  */
++  int dir_idx;		/* Index of directory used as base.  */
++  int used;		/* Used in the end?  */
++};
++
++/* Callback function for file_info comparison.  We sort by looking at
++   the directories in the path.  */
++static int
++file_info_cmp (p1, p2)
++     const void *p1;
++     const void *p2;
++{
++  const struct file_info *s1 = p1;
++  const struct file_info *s2 = p2;
++  unsigned char *cp1;
++  unsigned char *cp2;
++
++  /* Take care of file names without directories.  */
++  if (s1->path == s1->fname)
++    return -1;
++  else if (s2->path == s2->fname)
++    return 1;
++
++  cp1 = (unsigned char *) s1->path;
++  cp2 = (unsigned char *) s2->path;
++
++  while (1)
++    {
++      ++cp1;
++      ++cp2;
++      /* Reached the end of the first path?  */
++      if (cp1 == (unsigned char *) s1->fname)
++	/* It doesn't really matter in which order files from the
++	   same directory are sorted in.  Therefore don't test for
++	   the second path reaching the end.  */
++	return -1;
++      else if (cp2 == (unsigned char *) s2->fname)
++	return 1;
++
++      /* Character of current path component the same?  */
++      if (*cp1 != *cp2)
++	return *cp1 - *cp2;
++    }
++}
++
++/* Output the directory table and the file name table.  We try to minimize
++   the total amount of memory needed.  A heuristic is used to avoid large
++   slowdowns with many input files.  */
++static void
++output_file_names ()
++{
++  struct file_info *files;
++  struct dir_info *dirs;
++  int *saved;
++  int *savehere;
++  int *backmap;
++  int ndirs;
++  int idx_offset;
++  int i;
++  int idx;
++
++  /* Allocate the various arrays we need.  */
++  files = (struct file_info *) alloca (file_table.in_use
++				       * sizeof (struct file_info));
++  dirs = (struct dir_info *) alloca (file_table.in_use
++				     * sizeof (struct dir_info));
++
++  /* Sort the file names.  */
++   for (i = 1; i < (int) file_table.in_use; ++i)
++    {
++      char *f;
++
++      /* Skip all leading "./".  */
++      f = file_table.table[i];
++      while (f[0] == '.' && f[1] == '/')
++	f += 2;
++
++      /* Create a new array entry.  */
++      files[i].path = f;
++      files[i].length = strlen (f);
++      files[i].file_idx = i;
++
++      /* Search for the file name part.  */
++      f = strrchr (f, '/');
++      files[i].fname = f == NULL ? files[i].path : f + 1;
++    }
++  qsort (files + 1, file_table.in_use - 1, sizeof (files[0]),
++	 file_info_cmp);
++
++  /* Find all the different directories used.  */
++  dirs[0].path = files[1].path;
++  dirs[0].length = files[1].fname - files[1].path;
++  dirs[0].prefix = -1;
++  dirs[0].count = 1;
++  dirs[0].dir_idx = 0;
++  dirs[0].used = 0;
++  files[1].dir_idx = 0;
++  ndirs = 1;
++
++  for (i = 2; i < (int) file_table.in_use; ++i)
++    if (files[i].fname - files[i].path == dirs[ndirs - 1].length
++	&& memcmp (dirs[ndirs - 1].path, files[i].path,
++		   dirs[ndirs - 1].length) == 0)
++      {
++	/* Same directory as last entry.  */
++	files[i].dir_idx = ndirs - 1;
++	++dirs[ndirs - 1].count;
++      }
++    else
++      {
++	int j;
++
++	/* This is a new directory.  */
++	dirs[ndirs].path = files[i].path;
++	dirs[ndirs].length = files[i].fname - files[i].path;
++	dirs[ndirs].count = 1;
++	dirs[ndirs].dir_idx = ndirs;
++	dirs[ndirs].used = 0;
++	files[i].dir_idx = ndirs;
++
++	/* Search for a prefix.  */
++	dirs[ndirs].prefix = -1;
++	for (j = 0; j < ndirs; ++j)
++	  if (dirs[j].length < dirs[ndirs].length
++	      && dirs[j].length > 1
++	      && (dirs[ndirs].prefix == -1
++		  || dirs[j].length > dirs[dirs[ndirs].prefix].length)
++	      && memcmp (dirs[j].path, dirs[ndirs].path, dirs[j].length) == 0)
++	    dirs[ndirs].prefix = j;
++
++	++ndirs;
++      }
++
++  /* Now to the actual work.  We have to find a subset of the
++     directories which allow expressing the file name using references
++     to the directory table with the least amount of characters.  We
++     do not do an exhaustive search where we would have to check out
++     every combination of every single possible prefix.  Instead we
++     use a heuristic which provides nearly optimal results in most
++     cases and never is much off.  */
++  saved = (int *) alloca (ndirs * sizeof (int));
++  savehere = (int *) alloca (ndirs * sizeof (int));
++
++  memset (saved, '\0', ndirs * sizeof (saved[0]));
++  for (i = 0; i < ndirs; ++i)
++    {
++      int j;
++      int total;
++
++      /* We can always save some space for the current directory.  But
++	 this does not mean it will be enough to justify adding the
++	 directory.  */
++      savehere[i] = dirs[i].length;
++      total = (savehere[i] - saved[i]) * dirs[i].count;
++
++      for (j = i + 1; j < ndirs; ++j)
++	{
++	  savehere[j] = 0;
++
++	  if (saved[j] < dirs[i].length)
++	    {
++	      /* Determine whether the dirs[i] path is a prefix of the
++		 dirs[j] path.  */
++	      int k;
++
++	      k = dirs[j].prefix;
++	      while (k != -1 && k != i)
++		k = dirs[k].prefix;
++
++	      if (k == i)
++		{
++		  /* Yes it is.  We can possibly save some memory but
++		     writing the filenames in dirs[j] relative to
++		     dirs[i].  */
++		  savehere[j] = dirs[i].length;
++		  total += (savehere[j] - saved[j]) * dirs[j].count;
++		}
++	    }
++	}
++
++      /* Check whether we can save enough to justify adding the dirs[i]
++	 directory.  */
++      if (total > dirs[i].length + 1)
++	{
++	  /* It's worthwhile adding.  */
++          for (j = i; j < ndirs; ++j)
++	    if (savehere[j] > 0)
++	      {
++		/* Remember how much we saved for this directory so far.  */
++		saved[j] = savehere[j];
++
++		/* Remember the prefix directory.  */
++		dirs[j].dir_idx = i;
++	      }
++	}
++    }
++
++  /* We have to emit them in the order they appear in the file_table
++     array since the index is used in the debug info generation.  To
++     do this efficiently we generate a back-mapping of the indices
++     first.  */
++  backmap = (int *) alloca (file_table.in_use * sizeof (int));
++  for (i = 1; i < (int) file_table.in_use; ++i)
++    {
++      backmap[files[i].file_idx] = i;
++      /* Mark this directory as used.  */
++      dirs[dirs[files[i].dir_idx].dir_idx].used = 1;
++    }
++
++  /* That was it.  We are ready to emit the information.  First the
++     directory name table.  Here we have to make sure that the first
++     actually emitted directory name has the index one.  Zero is
++     reserved for the current working directory.  Make sure we do not
++     confuse these indices with the one for the constructed table
++     (even though most of the time they are identical).  */
++  idx = 1;
++  idx_offset = dirs[0].path[0] == '/' ? 1 : 0;
++  for (i = 1 - idx_offset; i < ndirs; ++i)
++    if (dirs[i].used != 0)
++      {
++	dirs[i].used = idx++;
++
++	if (flag_debug_asm)
++	  {
++	    ASM_OUTPUT_DWARF_NSTRING (asm_out_file,
++				      dirs[i].path, dirs[i].length - 1);
++	    fprintf (asm_out_file, "%s Directory Entry: 0x%x\n",
++		     ASM_COMMENT_START, dirs[i].used);
++	  }
++	else
++	  {
++	    ASM_OUTPUT_ASCII (asm_out_file, dirs[i].path, dirs[i].length - 1);
++	    ASM_OUTPUT_DWARF_DATA1 (asm_out_file, 0);
++	    fputc ('\n', asm_out_file);
++	  }
++      }
++  /* Correct the index for the current working directory entry if it
++     exists.  */
++  if (idx_offset == 0)
++    dirs[0].used = 0;
++  /* Terminate the directory name array.  */
++  ASM_OUTPUT_DWARF_DATA1 (asm_out_file, 0);
++  if (flag_debug_asm)
++    fprintf (asm_out_file, "\t%s End directory table", ASM_COMMENT_START);
++  fputc ('\n', asm_out_file);
++
++  /* Now write all the file names.  */
++  for (i = 1; i < (int) file_table.in_use; ++i)
++    {
++      int file_idx = backmap[i];
++      int dir_idx = dirs[files[file_idx].dir_idx].dir_idx;
++
++      if (flag_debug_asm)
++	{
++	  ASM_OUTPUT_DWARF_STRING (asm_out_file,
++				   files[file_idx].path
++				   + dirs[dir_idx].length);
++	  fprintf (asm_out_file, "%s File Entry: 0x%x\n",
++		   ASM_COMMENT_START, i);
++	}
++      else
++	ASM_OUTPUT_ASCII (asm_out_file,
++			  files[file_idx].path + dirs[dir_idx].length,
++			  (files[file_idx].length
++			   - dirs[dir_idx].length) + 1);
++
++      /* Include directory index.  */
++      output_uleb128 (dirs[dir_idx].used);
++      fputc ('\n', asm_out_file);
++
++      /* Modification time.  */
++      output_uleb128 (0);
++      fputc ('\n', asm_out_file);
++
++      /* File length in bytes.  */
++      output_uleb128 (0);
++      fputc ('\n', asm_out_file);
++    }
++
++  /* Terminate the file name table */
++  ASM_OUTPUT_DWARF_DATA1 (asm_out_file, 0);
++  if (flag_debug_asm)
++    fprintf (asm_out_file, "\t%s End file name table", ASM_COMMENT_START);
++  fputc ('\n', asm_out_file);
++}
++
++
+ /* Output the source line number correspondence information.  This
+    information goes into the .debug_line section.  */
+ 
+ static void
+ output_line_info ()
+ {
++  char l1[20], l2[20], p1[20], p2[20];
+   char line_label[MAX_ARTIFICIAL_LABEL_BYTES];
+   char prev_line_label[MAX_ARTIFICIAL_LABEL_BYTES];
+   register unsigned opc;
+   register unsigned n_op_args;
+-  register unsigned long ft_index;
+   register unsigned long lt_index;
+   register unsigned long current_line;
+   register long line_offset;
+@@ -5799,23 +6073,29 @@
+   register unsigned long current_file;
+   register unsigned long function;
+ 
+-  ASM_OUTPUT_DWARF_DELTA (asm_out_file, ".LTEND", ".LTSTART");
++  ASM_GENERATE_INTERNAL_LABEL (l1, LINE_NUMBER_BEGIN_LABEL, 0);
++  ASM_GENERATE_INTERNAL_LABEL (l2, LINE_NUMBER_END_LABEL, 0);
++  ASM_GENERATE_INTERNAL_LABEL (p1, LN_PROLOG_AS_LABEL, 0);
++  ASM_GENERATE_INTERNAL_LABEL (p2, LN_PROLOG_END_LABEL, 0);
++
++  ASM_OUTPUT_DWARF_DELTA (asm_out_file, l1, l2);
+   if (flag_debug_asm)
+     fprintf (asm_out_file, "\t%s Length of Source Line Info.",
+ 	     ASM_COMMENT_START);
+ 
+   fputc ('\n', asm_out_file);
+-  ASM_OUTPUT_LABEL (asm_out_file, ".LTSTART");
++  ASM_OUTPUT_LABEL (asm_out_file, l1);
+   ASM_OUTPUT_DWARF_DATA2 (asm_out_file, DWARF_VERSION);
+   if (flag_debug_asm)
+     fprintf (asm_out_file, "\t%s DWARF Version", ASM_COMMENT_START);
+ 
+   fputc ('\n', asm_out_file);
+-  ASM_OUTPUT_DWARF_DATA (asm_out_file, size_of_line_prolog ());
++  ASM_OUTPUT_DWARF_DELTA (asm_out_file, p1, p2);
+   if (flag_debug_asm)
+     fprintf (asm_out_file, "\t%s Prolog Length", ASM_COMMENT_START);
+ 
+   fputc ('\n', asm_out_file);
++  ASM_OUTPUT_LABEL (asm_out_file, p1);
+   ASM_OUTPUT_DWARF_DATA1 (asm_out_file, DWARF_LINE_MIN_INSTR_LENGTH);
+   if (flag_debug_asm)
+     fprintf (asm_out_file, "\t%s Minimum Instruction Length",
+@@ -5867,48 +6147,9 @@
+       fputc ('\n', asm_out_file);
+     }
+ 
+-  if (flag_debug_asm)
+-    fprintf (asm_out_file, "%s Include Directory Table\n", ASM_COMMENT_START);
+-
+-  /* Include directory table is empty, at present */
+-  ASM_OUTPUT_DWARF_DATA1 (asm_out_file, 0);
+-  fputc ('\n', asm_out_file);
+-  if (flag_debug_asm)
+-    fprintf (asm_out_file, "%s File Name Table\n", ASM_COMMENT_START);
+-
+-  for (ft_index = 1; ft_index < file_table_in_use; ++ft_index)
+-    {
+-      if (flag_debug_asm)
+-	{
+-	  ASM_OUTPUT_DWARF_STRING (asm_out_file, file_table[ft_index]);
+-	  fprintf (asm_out_file, "%s File Entry: 0x%lx",
+-		   ASM_COMMENT_START, ft_index);
+-	}
+-      else
+-	{
+-	  ASM_OUTPUT_ASCII (asm_out_file,
+-			    file_table[ft_index],
+-			    (int) strlen (file_table[ft_index]) + 1);
+-	}
+-
+-      fputc ('\n', asm_out_file);
+-
+-      /* Include directory index */
+-      output_uleb128 (0);
+-      fputc ('\n', asm_out_file);
+-
+-      /* Modification time */
+-      output_uleb128 (0);
+-      fputc ('\n', asm_out_file);
+-
+-      /* File length in bytes */
+-      output_uleb128 (0);
+-      fputc ('\n', asm_out_file);
+-    }
+-
+-  /* Terminate the file name table */
+-  ASM_OUTPUT_DWARF_DATA1 (asm_out_file, 0);
+-  fputc ('\n', asm_out_file);
++  /* Write out the information about the files we use.  */
++  output_file_names ();
++  ASM_OUTPUT_LABEL (asm_out_file, p2);
+ 
+   /* We used to set the address register to the first location in the text
+      section here, but that didn't accomplish anything since we already
+@@ -5989,7 +6230,7 @@
+ 	  fputc ('\n', asm_out_file);
+ 	  output_uleb128 (current_file);
+ 	  if (flag_debug_asm)
+-	    fprintf (asm_out_file, " (\"%s\")", file_table[current_file]);
++	    fprintf (asm_out_file, " (\"%s\")", file_table.table[current_file]);
+ 
+ 	  fputc ('\n', asm_out_file);
+ 	}
+@@ -6161,7 +6402,7 @@
+ 	  fputc ('\n', asm_out_file);
+ 	  output_uleb128 (current_file);
+ 	  if (flag_debug_asm)
+-	    fprintf (asm_out_file, " (\"%s\")", file_table[current_file]);
++	    fprintf (asm_out_file, " (\"%s\")", file_table.table[current_file]);
+ 
+ 	  fputc ('\n', asm_out_file);
+ 	}
+@@ -6264,7 +6505,7 @@
+     }
+ 
+   /* Output the marker for the end of the line number info.  */
+-  ASM_OUTPUT_LABEL (asm_out_file, ".LTEND");
++  ASM_OUTPUT_LABEL (asm_out_file, l2);
+ }
+ 
+ /* Given a pointer to a tree node for some base type, return a pointer to
+@@ -8523,8 +8764,7 @@
+     }
+   else if (old_die)
+     {
+-      register unsigned file_index
+-	= lookup_filename (DECL_SOURCE_FILE (decl));
++      unsigned file_index = lookup_filename (DECL_SOURCE_FILE (decl));
+ 
+       if (get_AT_flag (old_die, DW_AT_declaration) != 1)
+ 	{
+@@ -8780,8 +9020,7 @@
+       add_AT_die_ref (var_die, DW_AT_specification, old_die);
+       if (DECL_NAME (decl))
+ 	{
+-	  register unsigned file_index
+-	    = lookup_filename (DECL_SOURCE_FILE (decl));
++	  unsigned file_index = lookup_filename (DECL_SOURCE_FILE (decl));
+ 
+ 	  if (get_AT_unsigned (old_die, DW_AT_decl_file) != file_index)
+ 	    add_AT_unsigned (var_die, DW_AT_decl_file, file_index);
+@@ -10009,38 +10248,57 @@
+ lookup_filename (file_name)
+      const char *file_name;
+ {
+-  static unsigned last_file_lookup_index = 0;
+   register unsigned i;
+ 
++  /* ??? Why isn't DECL_SOURCE_FILE left null instead.  */
++  if (strcmp (file_name, "<internal>") == 0
++      || strcmp (file_name, "<built-in>") == 0)
++     return 0;
++
+   /* Check to see if the file name that was searched on the previous call
+      matches this file name. If so, return the index.  */
+-  if (last_file_lookup_index != 0)
+-    if (strcmp (file_name, file_table[last_file_lookup_index]) == 0)
+-      return last_file_lookup_index;
++  if (file_table.last_lookup_index != 0)
++    if (strcmp (file_name, file_table.table[file_table.last_lookup_index]) == 0)
++      return file_table.last_lookup_index;
+ 
+   /* Didn't match the previous lookup, search the table */
+-  for (i = 1; i < file_table_in_use; ++i)
+-    if (strcmp (file_name, file_table[i]) == 0)
++  for (i = 1; i < file_table.in_use; ++i)
++    if (strcmp (file_name, file_table.table[i]) == 0)
+       {
+-	last_file_lookup_index = i;
++	file_table.last_lookup_index = i;
+ 	return i;
+       }
+ 
+   /* Prepare to add a new table entry by making sure there is enough space in 
+      the table to do so.  If not, expand the current table.  */
+-  if (file_table_in_use == file_table_allocated)
++  if (i == file_table.allocated)
+     {
+-      file_table_allocated += FILE_TABLE_INCREMENT;
+-      file_table
+-	= (char **) xrealloc (file_table,
+-			      file_table_allocated * sizeof (char *));
++      file_table.allocated = i + FILE_TABLE_INCREMENT;
++      file_table.table = (char **)
++	xrealloc (file_table.table, file_table.allocated * sizeof (char *));
+     }
+ 
+   /* Add the new entry to the end of the filename table.  */
+-  file_table[file_table_in_use] = xstrdup (file_name);
+-  last_file_lookup_index = file_table_in_use++;
++  file_table.table[i] = xstrdup (file_name);
++  file_table.in_use = i + 1;
++  file_table.last_lookup_index = i;
++
++  if (DWARF2_ASM_LINE_DEBUG_INFO)
++    fprintf (asm_out_file, "\t.file %u \"%s\"\n", i, file_name);
+ 
+-  return last_file_lookup_index;
++  return file_table.last_lookup_index;
++}
++
++static void
++init_file_table()
++{
++  /* Allocate the initial hunk of the file table.  */
++  file_table.table = (char **) xcalloc (FILE_TABLE_INCREMENT, sizeof (char *));
++  file_table.allocated = FILE_TABLE_INCREMENT;
++  
++  /* Skip the first entry - file numbers begin at 1.  */
++  file_table.in_use = 1;
++  file_table.last_lookup_index = 0;
+ }
+ 
+ /* Output a label to mark the beginning of a source code line entry
+@@ -10058,19 +10316,10 @@
+ 
+       if (DWARF2_ASM_LINE_DEBUG_INFO)
+ 	{
+-	  static const char *lastfile;
++	  unsigned file_num = lookup_filename (filename);
+ 
+-	  /* Emit the .file and .loc directives understood by GNU as.  */
+-	  if (lastfile == 0 || strcmp (filename, lastfile))
+-	    {
+-	      if (lastfile == 0)
+-		ggc_add_string_root ((char **) &lastfile, 1);
+-
+-	      fprintf (asm_out_file, "\t.file 0 \"%s\"\n", filename);
+-	      lastfile = filename;
+-	    }
+-
+-	  fprintf (asm_out_file, "\t.loc 0 %d 0\n", line);
++	  /* Emit the .loc directives understood by GNU as.  */
++	  fprintf (asm_out_file, "\t.loc %d %d 0\n", file_num, line);
+ 
+ 	  /* Indicate that line number info exists.  */
+ 	  ++line_info_table_in_use;
+@@ -10188,15 +10437,15 @@
+      register FILE *asm_out_file;
+      register const char *main_input_filename;
+ {
++  init_file_table();
++
+   /* Remember the name of the primary input file.  */
+   primary_filename = main_input_filename;
+ 
+-  /* Allocate the initial hunk of the file_table.  */
+-  file_table = (char **) xcalloc (FILE_TABLE_INCREMENT, sizeof (char *));
+-  file_table_allocated = FILE_TABLE_INCREMENT;
+-
+-  /* Skip the first entry - file numbers begin at 1.  */
+-  file_table_in_use = 1;
++  /* Add it to the file table first, under the assumption that we'll
++     be emitting line number data for it first, which avoids having
++     to add an initial DW_LNS_set_file.  */
++  lookup_filename (main_input_filename);
+ 
+   /* Allocate the initial hunk of the decl_die_table.  */
+   decl_die_table

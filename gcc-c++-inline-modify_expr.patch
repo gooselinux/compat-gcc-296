@@ -1,0 +1,53 @@
+2001-01-28  Jakub Jelinek  <jakub@redhat.com>
+
+	* optimize.c (copy_body_r): If MODIFY_EXPR has both arguments
+	identical and they would be replaced with constant, remove
+	MODIFY_EXPR from the tree.
+
+	* g++.old-deja/g++.other/inline18.C: New test.
+
+--- gcc/cp/optimize.c.jj	Wed Jan 24 19:02:21 2001
++++ gcc/cp/optimize.c	Sun Jan 28 00:01:01 2001
+@@ -341,6 +341,26 @@ copy_body_r (tp, walk_subtrees, data)
+ 	 result is no longer valid.  */
+       else if (TREE_CODE (*tp) == CALL_EXPR)
+ 	CALL_EXPR_RTL (*tp) = NULL_RTX;
++      else if (TREE_CODE (*tp) == MODIFY_EXPR
++	       && TREE_OPERAND (*tp, 0) == TREE_OPERAND (*tp, 1)
++	       && nonstatic_local_decl_p (TREE_OPERAND (*tp, 0))
++	       && DECL_CONTEXT (TREE_OPERAND (*tp, 0)) == fn)
++	{
++	  /* Some assignments VAR = VAR; don't generate any rtl code
++	     and don't count as variable modification.  Avoid
++	     keeping bogosities like 0 = 0.  */
++	  tree decl = TREE_OPERAND (*tp, 0), value;
++	  splay_tree_node n;
++
++	  n = splay_tree_lookup (id->decl_map, (splay_tree_key) decl);
++	  if (n)
++	    {
++	      value = (tree) n->value;
++	      STRIP_TYPE_NOPS (value);
++	      if (TREE_CONSTANT (value) || TREE_READONLY_DECL_P (value))
++		*tp = value;
++	    }
++	}
+     }
+ 
+   /* Keep iterating.  */
+--- gcc/testsuite/g++.old-deja/g++.other/inline18.C.jj	Fri Jan 26 20:21:38 2001
++++ gcc/testsuite/g++.old-deja/g++.other/inline18.C	Fri Jan 26 20:21:34 2001
+@@ -0,0 +1,13 @@
++// Build don't link:
++// Origin: Jakub Jelinek <jakub@redhat.com>
++// Special g++ Options: -O3
++
++static void foo (int a)
++{
++  a = a;
++}
++
++static void bar (void)
++{
++  foo (-1);
++}

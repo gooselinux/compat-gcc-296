@@ -1,0 +1,293 @@
+2000-12-05  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* typeck.c (get_delta_difference): If via a virtual base,
+	return zero.
+	* cvt.c (cp_convert_to_pointer): If via a virtual base, do no
+	adjustment.
+
+2000-11-27  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* cp-tree.h (binfo_from_vbase): Return the virtual base's binfo.
+	* cvt.c (cp_convert_to_pointer): Add force parameter.
+	Allow conversions via virtual base if forced.
+	(convert_to_pointer_force): Adjust call to cp_convert_to_pointer.
+	(ocp_convert): Likewise.
+	* search.c (binfo_from_vbase): Return the virtual base's binfo.
+	* typeck.c (get_delta_difference): Adjust handling of virtual
+	bases.
+
+	* g++.old-deja/g++.other/ptrmem8.C: New test.
+
+--- gcc/cp/cp-tree.h.jj	Thu Nov 16 17:40:21 2000
++++ gcc/cp/cp-tree.h	Mon Nov 27 15:15:09 2000
+@@ -4309,7 +4309,7 @@ extern tree current_scope			PARAMS ((voi
+ extern int at_function_scope_p                  PARAMS ((void));
+ extern tree lookup_conversions			PARAMS ((tree));
+ extern tree binfo_for_vtable			PARAMS ((tree));
+-extern int  binfo_from_vbase			PARAMS ((tree));
++extern tree binfo_from_vbase			PARAMS ((tree));
+ extern tree dfs_walk                            PARAMS ((tree, 
+ 						       tree (*)(tree, void *),
+ 						       tree (*) (tree, void *),
+--- gcc/cp/cvt.c.jj	Sun Jul  2 10:37:20 2000
++++ gcc/cp/cvt.c	Tue Dec  5 18:07:37 2000
+@@ -35,7 +35,7 @@ Boston, MA 02111-1307, USA.  */
+ #include "toplev.h"
+ #include "decl.h"
+ 
+-static tree cp_convert_to_pointer PARAMS ((tree, tree));
++static tree cp_convert_to_pointer PARAMS ((tree, tree, int));
+ static tree convert_to_pointer_force PARAMS ((tree, tree));
+ static tree build_up_reference PARAMS ((tree, tree, int));
+ 
+@@ -66,11 +66,14 @@ static tree build_up_reference PARAMS ((
+      else if dealing with method pointers, delegate
+      else convert blindly
+    else if converting class, pass off to build_type_conversion
+-   else try C-style pointer conversion  */
++   else try C-style pointer conversion.  If FORCE is true then allow
++   conversions via virtual bases (these are permitted by reinterpret_cast,
++   but not static_cast).  */
+ 
+ static tree
+-cp_convert_to_pointer (type, expr)
++cp_convert_to_pointer (type, expr, force)
+      tree type, expr;
++     int force;
+ {
+   register tree intype = TREE_TYPE (expr);
+   register enum tree_code form;
+@@ -183,6 +186,7 @@ cp_convert_to_pointer (type, expr)
+ 	  tree b1; 
+ 	  tree b2;
+ 	  tree binfo;
++	  tree virt_binfo;
+ 	  enum tree_code code;
+ 
+ 	  b1 = TYPE_OFFSET_BASETYPE (TREE_TYPE (type));
+@@ -200,18 +204,30 @@ cp_convert_to_pointer (type, expr)
+ 	  if (binfo == error_mark_node)
+ 	    return error_mark_node;
+ 
+-	  if (binfo_from_vbase (binfo))
++          virt_binfo = binfo_from_vbase (binfo);
++          if (virt_binfo)
+ 	    {
+-	      cp_error ("conversion to `%T' from pointer to member of virtual base `%T'",
+-			type, intype);
+-	      return error_mark_node;
++	      if (force)
++	        cp_warning ("pointer to member cast via virtual base `%T' of `%T'",
++	                    BINFO_TYPE (virt_binfo),
++                            BINFO_TYPE (BINFO_INHERITANCE_CHAIN (virt_binfo)));
++              else
++                {
++	          cp_error ("pointer to member cast via virtual base `%T' of `%T'",
++	                    BINFO_TYPE (virt_binfo),
++                            BINFO_TYPE (BINFO_INHERITANCE_CHAIN (virt_binfo)));
++	          return error_mark_node;
++	        }
++	      /* This is a reinterpret cast, whose result is unspecified.
++	         We choose to do nothing.  */
++	      return build1 (NOP_EXPR, type, expr);
+ 	    }
+ 	      
+ 	  if (TREE_CODE (expr) == PTRMEM_CST)
+ 	    expr = cplus_expand_constant (expr);
+ 
+-	  if (binfo && ! TREE_VIA_VIRTUAL (binfo))
+-	    expr = size_binop (code, convert (sizetype,expr),
++	  if (binfo)
++	    expr = size_binop (code, convert (sizetype, expr),
+ 			       BINFO_OFFSET (binfo));
+ 	}
+       else if (TYPE_PTRMEMFUNC_P (type))
+@@ -329,7 +345,7 @@ convert_to_pointer_force (type, expr)
+ 	}
+     }
+ 
+-  return cp_convert_to_pointer (type, expr);
++  return cp_convert_to_pointer (type, expr, 1);
+ }
+ 
+ /* We are passing something to a function which requires a reference.
+@@ -760,7 +776,7 @@ ocp_convert (type, expr, convtype, flags
+     }
+   if (code == POINTER_TYPE || code == REFERENCE_TYPE
+       || TYPE_PTRMEMFUNC_P (type))
+-    return fold (cp_convert_to_pointer (type, e));
++    return fold (cp_convert_to_pointer (type, e, 0));
+   if (code == REAL_TYPE || code == COMPLEX_TYPE)
+     {
+       if (IS_AGGR_TYPE (TREE_TYPE (e)))
+--- gcc/cp/search.c.jj	Mon Jul 31 20:02:20 2000
++++ gcc/cp/search.c	Mon Nov 27 15:14:08 2000
+@@ -3364,18 +3364,19 @@ binfo_for_vtable (var)
+   return binfo;
+ }
+ 
+-/* Returns 1 iff BINFO is from a direct or indirect virtual base.  */
++/* Returns the binfo of the first direct or indirect virtual base from
++   which BINFO is derrived, or NULL if binfo is not via virtual.  */
+ 
+-int
++tree
+ binfo_from_vbase (binfo)
+      tree binfo;
+ {
+   for (; binfo; binfo = BINFO_INHERITANCE_CHAIN (binfo))
+     {
+       if (TREE_VIA_VIRTUAL (binfo))
+-	return 1;
++	return binfo;
+     }
+-  return 0;
++  return NULL_TREE;
+ }
+ 
+ /* Returns the BINFO (if any) for the virtual baseclass T of the class
+--- gcc/cp/typeck.c.jj	Wed Nov 22 18:25:54 2000
++++ gcc/cp/typeck.c	Tue Dec  5 18:15:07 2000
+@@ -5947,6 +5947,7 @@ get_delta_difference (from, to, force)
+ {
+   tree delta = integer_zero_node;
+   tree binfo;
++  tree virt_binfo;
+   
+   if (to == from)
+     return delta;
+@@ -5972,31 +5973,43 @@ get_delta_difference (from, to, force)
+       binfo = get_binfo (to, from, 1);
+       if (binfo == 0 || binfo == error_mark_node)
+ 	return delta;
+-      if (binfo_from_vbase (binfo))
++      virt_binfo = binfo_from_vbase (binfo);
++      
++      if (virt_binfo)
+ 	{
+-	  binfo = binfo_for_vbase (BINFO_TYPE (binfo), from);
+-	  cp_warning ("pointer to member cast to virtual base `%T' will only work if you are very careful", BINFO_TYPE (binfo));
++	  /* This is a reinterpret cast, we choose to do nothing. */
++	  cp_warning ("pointer to member cast via virtual base %T' of %T'",
++		      BINFO_TYPE (virt_binfo),
++		      BINFO_TYPE (BINFO_INHERITANCE_CHAIN (virt_binfo)));
++	  return delta;
+ 	}
+       delta = BINFO_OFFSET (binfo);
+       delta = cp_convert (ptrdiff_type_node, delta);
+-      
+-      return cp_build_binary_op (MINUS_EXPR,
+-				 integer_zero_node,
+-				 delta);
++      delta = cp_build_binary_op (MINUS_EXPR,
++				  integer_zero_node,
++				  delta);
++
++      return delta;
+     }
+ 
+-  if (binfo_from_vbase (binfo))
++  virt_binfo = binfo_from_vbase (binfo);
++  if (virt_binfo)
+     {
++      /* This is a reinterpret cast, we choose to do nothing. */
+       if (force)
+-	{
+-	  cp_warning ("pointer to member cast from virtual base `%T' will only work if you are very careful", BINFO_TYPE (binfo));
+-	}
++	cp_warning ("pointer to member cast via virtual base `%T' of `%T'",
++		    BINFO_TYPE (virt_binfo),
++		    BINFO_TYPE (BINFO_INHERITANCE_CHAIN (virt_binfo)));
+       else
+-	cp_error ("pointer to member conversion from virtual base `%T'",
+-		  BINFO_TYPE (binfo));
++	cp_error ("pointer to member conversion via virtual base `%T' of `%T'",
++		  BINFO_TYPE (virt_binfo),
++		  BINFO_TYPE (BINFO_INHERITANCE_CHAIN (virt_binfo)));
++      return delta;
+     }
+ 
+-  return BINFO_OFFSET (binfo);
++  delta = BINFO_OFFSET (binfo);
++
++  return cp_convert (ptrdiff_type_node, delta);
+ }
+ 
+ /* Return a constructor for the pointer-to-member-function TYPE using
+--- gcc/testsuite/g++.old-deja/g++.other/ptrmem8.C.jj	Mon Nov 27 15:20:29 2000
++++ gcc/testsuite/g++.old-deja/g++.other/ptrmem8.C	Mon Nov 27 15:20:50 2000
+@@ -0,0 +1,74 @@
++// Copyright (C) 2000 Free Software Foundation, Inc.
++// Contributed by Nathan Sidwell 22 Nov 2000 <nathan@codesourcery.com>
++
++// bug 827. We died issuing warnings about dangerous pointer to member
++// conversions.
++
++struct bar
++{
++  int barm;
++    static void a();
++};
++struct filler1 {int fm;};
++struct filler2 {int fm;};
++struct filler3 {int fm;};
++struct filler4 {int fm;};
++
++struct baz : filler1, bar, filler2
++{
++  int bazm;
++};
++
++struct foo : filler3, virtual baz, filler4
++{
++    static void a();
++    void b() {};
++    int m;
++};
++
++typedef void (bar::*barfPtr)();
++typedef void (foo::*foofPtr)();
++typedef int bar::*barmPtr;
++typedef int foo::*foomPtr;
++
++int main ()
++{
++  foofPtr fp = &foo::b;
++  barfPtr bp = (barfPtr)fp;         // WARNING - pointer to member
++  foofPtr fp2 = (foofPtr)bp;        // WARNING - pointer to member
++  
++  if (fp2 != fp)
++    return 1;
++  
++  foo fobj;
++  fobj.filler1::fm = 1;
++  fobj.filler2::fm = 2;
++  fobj.filler3::fm = 3;
++  fobj.filler4::fm = 4;
++  fobj.bazm = 5;
++  fobj.barm = 6;
++  fobj.m = 78;
++  
++  foomPtr fmp = &foo::m;
++  barmPtr bmp = (barmPtr)fmp;          // WARNING - pointer to member
++  foomPtr fmp2 = (foomPtr)bmp;         // WARNING - pointer to member
++  bar *bptr = &fobj;
++  
++  if (fmp != fmp2)
++    return 2;
++  
++  if (bptr->*bmp != 78)
++    return 3;
++  
++  bp = reinterpret_cast <barfPtr> (fp);
++  fp2 = reinterpret_cast <foofPtr> (bp);
++  if (fp2 != fp)
++    return 4;
++  
++  bmp = reinterpret_cast <barmPtr> (fmp);
++  fmp2 = reinterpret_cast <foomPtr> (bmp);
++  if (fmp != fmp2)
++    return 5;
++  
++  return 0;
++}

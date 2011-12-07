@@ -1,0 +1,16 @@
+2001-11-20  Brad Kaiser  <bkaiser@acelink.net>
+
+	* reload1.c (elimination_effects): Use function_invariant_p
+	instead of CONSTANT_P when considering register equivalences.
+
+--- gcc/reload1.c	2001/11/11 11:25:27	1.311
++++ gcc/reload1.c	2001/11/21 00:04:47	1.312
+@@ -2699,7 +2699,7 @@ elimination_effects (x, mem_mode)
+ 	}
+       else if (reg_renumber[regno] < 0 && reg_equiv_constant
+ 	       && reg_equiv_constant[regno]
+-	       && ! CONSTANT_P (reg_equiv_constant[regno]))
++	       && ! function_invariant_p (reg_equiv_constant[regno]))
+ 	elimination_effects (reg_equiv_constant[regno], mem_mode);
+       return;
+ 

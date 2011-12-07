@@ -1,0 +1,16 @@
+2000-08-28  Jason Merrill  <jason@redhat.com>
+
+	* dwarf2out.c (splice_child_die): Remove the die from the right
+	parent.
+
+--- gcc/dwarf2out.c.jj	Thu Apr  5 21:25:00 2001
++++ gcc/dwarf2out.c	Wed Apr 11 18:21:04 2001
+@@ -4651,7 +4651,7 @@ splice_child_die (parent, child)
+       && child->die_parent != get_AT_ref (parent, DW_AT_specification))
+     abort ();
+ 
+-  for (p = &(parent->die_child); *p; p = &((*p)->die_sib))
++  for (p = &(child->die_parent->die_child); *p; p = &((*p)->die_sib))
+     if (*p == child)
+       {
+ 	*p = child->die_sib;

@@ -1,0 +1,32 @@
+2000-08-16  Richard Henderson  <rth@cygnus.com>
+
+        * combine.c (simplify_shift_const): Revert previous two
+        changes.  If SHIFT_COUNT_TRUNCATED, crop the shift count
+        before the main loop.
+
+2000-08-15  Richard Henderson  <rth@cygnus.com>
+
+        * combine.c (simplify_shift_const): Bound shift count when
+        combining shifts.
+
+2000-08-11  Richard Henderson  <rth@cygnus.com>
+
+	* combine.c (simplify_shift_const): Obey SHIFT_COUNT_TRUNCATED.
+
+--- gcc/combine.c	2000/08/04 20:28:04	1.142
++++ gcc/combine.c	2000/08/16 07:56:04	1.145
+@@ -8851,6 +8851,14 @@ simplify_shift_const (x, code, result_mo
+ 
+   count = input_count;
+ 
++  /* Make sure and truncate the "natural" shift on the way in.  We don't
++     want to do this inside the loop as it makes it more difficult to
++     combine shifts.  */
++#ifdef SHIFT_COUNT_TRUNCATED
++  if (SHIFT_COUNT_TRUNCATED)
++    count %= GET_MODE_BITSIZE (mode);
++#endif
++
+   /* Unless one of the branches of the `if' in this loop does a `continue',
+      we will `break' the loop after the `if'.  */
+ 

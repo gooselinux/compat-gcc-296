@@ -1,0 +1,68 @@
+2000-08-30  Jason Merrill  <jason@redhat.com>
+
+	* tree.c (bot_manip): Check TREE_CONSTANT rather than
+	!TREE_SIDE_EFFECTS.  Call break_out_target_exprs and
+	build_target_expr_with_type for the non-AGGR_INIT_EXPR case.
+
+	* g++.old-deja/g++.other/defarg5.C: New test.
+
+--- gcc/cp/tree.c.jj	Wed May  9 20:56:28 2001
++++ gcc/cp/tree.c	Fri Jun  1 16:30:42 2001
+@@ -1655,13 +1655,15 @@ bot_manip (tp, walk_subtrees, data)
+   splay_tree target_remap = ((splay_tree) data);
+   tree t = *tp;
+ 
+-  if (TREE_CODE (t) != TREE_LIST && ! TREE_SIDE_EFFECTS (t))
++  if (TREE_CONSTANT (t))
+     {
+-      /* There can't be any TARGET_EXPRs below this point.  */
++      /* There can't be any TARGET_EXPRs or their slot variables below
++         this point.  We used to check !TREE_SIDE_EFFECTS, but then we
++         failed to copy an ADDR_EXPR of the slot VAR_DECL.  */
+       *walk_subtrees = 0;
+       return NULL_TREE;
+     }
+-  else if (TREE_CODE (t) == TARGET_EXPR)
++  if (TREE_CODE (t) == TARGET_EXPR)
+     {
+       tree u;
+ 
+@@ -1673,13 +1675,8 @@ bot_manip (tp, walk_subtrees, data)
+ 	}
+       else 
+ 	{
+-	  tree var;
+-
+-	  u = copy_node (t);
+-	  var = build (VAR_DECL, TREE_TYPE (t));
+-	  DECL_CONTEXT (var) = current_function_decl;
+-	  layout_decl (var, 0);
+-	  TREE_OPERAND (u, 0) = var;
++	  u = build_target_expr_with_type
++	    (break_out_target_exprs (TREE_OPERAND (t, 1)), TREE_TYPE (t));
+ 	}
+ 
+       /* Map the old variable to the new one.  */
+--- gcc/testsuite/g++.old-deja/g++.other/defarg5.C.jj	Fri Jun  1 16:28:52 2001
++++ gcc/testsuite/g++.old-deja/g++.other/defarg5.C	Thu Aug 31 02:38:34 2000
+@@ -0,0 +1,20 @@
++// Bug: the SAVE_EXPR in the new expression remembers that it's in g(),
++// causing the compiler to crash in h().
++
++// Build don't link:
++
++struct A {
++  A ();
++};
++
++void f (A* = new A);
++
++void g ()
++{
++  f ();
++}
++
++void h ()
++{
++  f ();
++}

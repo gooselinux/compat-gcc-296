@@ -1,0 +1,51 @@
+2000-12-04  Will Cohen  <wcohen@redhat.com>
+
+	* decl.c (define_case_label): Cleared
+	more_cleanups_ok in surrounding function scopes.
+	(define_label): Likewise.
+
+--- gcc/cp/decl.c.jj	Thu Nov 16 17:40:26 2000
++++ gcc/cp/decl.c	Wed Dec  6 11:21:32 2000
+@@ -5137,15 +5137,17 @@ define_label (filename, line, name)
+ {
+   tree decl = lookup_label (name);
+   struct named_label_list *ent;
++  register struct binding_level *p;
+ 
+   for (ent = named_labels; ent; ent = ent->next)
+     if (ent->label_decl == decl)
+       break;
+ 
+-  /* After labels, make any new cleanups go into their
++  /* After labels, make any new cleanups in the function go into their
+      own new (temporary) binding contour.  */
+-  current_binding_level->more_cleanups_ok = 0;
+-
++  for (p = current_binding_level; !(p->parm_flag); p = p->level_chain)
++    p->more_cleanups_ok = 0;
++       
+   if (name == get_identifier ("wchar_t"))
+     cp_pedwarn ("label named wchar_t");
+ 
+@@ -5207,6 +5209,7 @@ void
+ define_case_label ()
+ {
+   tree cleanup = last_cleanup_this_contour ();
++  register struct binding_level *p;
+ 
+   if (! switch_stack)
+     /* Don't crash; we'll complain in do_case.  */
+@@ -5227,10 +5230,11 @@ define_case_label ()
+ 
+   check_switch_goto (switch_stack->level);
+ 
+-  /* After labels, make any new cleanups go into their
++  /* After labels, make any new cleanups in the function go into their
+      own new (temporary) binding contour.  */
++  for (p = current_binding_level; !(p->parm_flag); p = p->level_chain)
++    p->more_cleanups_ok = 0;
+ 
+-  current_binding_level->more_cleanups_ok = 0;
+   current_function_return_value = NULL_TREE;
+ }
+ 

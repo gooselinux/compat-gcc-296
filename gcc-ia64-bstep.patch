@@ -1,0 +1,15 @@
+2001-04-27  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/linux.h (CC1_SPEC): Add -mb-step.
+
+--- gcc/config/ia64/linux.h.jj	Fri Nov  3 10:53:39 2000
++++ gcc/config/ia64/linux.h	Wed Apr 25 16:12:21 2001
+@@ -5,7 +5,7 @@
+ 
+ /* This is for -profile to use -lc_p instead of -lc. */
+ #undef CC1_SPEC
+-#define CC1_SPEC "%{profile:-p} %{G*}"
++#define CC1_SPEC "-mb-step %{profile:-p} %{G*}"
+ 
+ /* ??? Maybe this should be in sysv4.h?  */
+ #define CPP_PREDEFINES "\

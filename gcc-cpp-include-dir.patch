@@ -1,0 +1,39 @@
+2001-04-05  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cppfiles.c (open_file): Fail directories silently, but
+	with an errno of NOENT set.
+
+--- gcc/cppfiles.c.jj	2002-07-04 00:26:03.000000000 +0200
++++ gcc/cppfiles.c	2002-09-11 19:05:05.000000000 +0200
+@@ -238,15 +238,23 @@ open_file (pfile, filename)
+ 
+   if (file->fd != -1 && fstat (file->fd, &file->st) == 0)
+     {
+-      /* Mark a regular, zero-length file never-reread now.  */
+-      if (S_ISREG (file->st.st_mode) && file->st.st_size == 0)
+-        {
+-	  _cpp_never_reread (file);
+-	  close (file->fd);
+-	  file->fd = -1;
+-	}
++      /* If it's a directory, we return null and continue the search
++	 as the file we're looking for may appear elsewhere in the
++	 search path.  */
++      if (S_ISDIR (file->st.st_mode))
++	errno = ENOENT;
++      else
++	{
++	  /* Mark a regular, zero-length file never-reread now.  */
++	  if (S_ISREG (file->st.st_mode) && file->st.st_size == 0)
++	    {
++	      _cpp_never_reread (file);
++	      close (file->fd);
++	      file->fd = -1;
++	    }
+ 
+-      return file;
++	  return file;
++	}
+     }
+ 
+   /* Don't issue an error message if the file doesn't exist.  */

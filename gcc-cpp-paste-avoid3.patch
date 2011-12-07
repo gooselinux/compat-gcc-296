@@ -1,0 +1,229 @@
+2001-02-01  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cpphash.h (struct cpp_buffer): Move saved_flags from cpp_reader.
+	* cpplex.c (_cpp_lex_token): New token picks up the saved flags,
+	and AVOID_LPASTE is cleared on meeting an unescaped newline.
+	* cppmacro.c (builtin_macro): Set builtin flags here.
+	(paste_all_tokens): Preserve AVOID_LPASTE on pasted token.
+	(replace_args): Clarify intent.
+	(cpp_get_token): Macro expansion tokens get the saved flags.
+	Update.
+	* cppmain.c (scan_buffer): Remove now-redundant print.printed
+	check.
+
+	* gcc.dg/cpp/avoidpaste2.c: New tests.
+
+--- gcc/cpphash.h	2001/01/31 07:48:54	1.93
++++ gcc/cpphash.h	2001/02/01 18:59:42
+@@ -194,6 +194,9 @@ struct cpp_buffer
+   /* Line number at line_base (above). */
+   unsigned int lineno;
+ 
++  /* Contains PREV_WHITE and/or AVOID_LPASTE.  */
++  unsigned char saved_flags;
++
+   /* Because of the way the lexer works, -Wtrigraphs can sometimes
+      warn twice for the same trigraph.  This helps prevent that.  */
+   const unsigned char *last_Wtrigraphs;
+@@ -330,9 +333,6 @@ struct cpp_reader
+ 
+   /* We're printed a warning recommending against using #import.  */
+   unsigned char import_warning;
+-
+-  /* Used to flag the token after a paste AVOID_LPASTE.  */
+-  unsigned char saved_flags;
+ 
+   /* True after cpp_start_read completes.  Used to inhibit some
+      warnings while parsing the command line.  */
+--- gcc/cpplex.c	2001/01/28 11:22:23	1.126
++++ gcc/cpplex.c	2001/02/01 18:59:47
+@@ -857,7 +857,8 @@ _cpp_lex_token (pfile, result)
+  done_directive:
+   buffer = pfile->buffer;
+   pfile->state.next_bol = 0;
+-  result->flags = 0;
++  result->flags = buffer->saved_flags;
++  buffer->saved_flags = 0;
+  next_char:
+   pfile->lexer_pos.line = buffer->lineno;
+  next_char2:
+@@ -899,7 +900,7 @@ _cpp_lex_token (pfile, result)
+ 	  /* This is a new line, so clear any white space flag.
+ 	     Newlines in arguments are white space (6.10.3.10);
+ 	     parse_arg takes care of that.  */
+-	  result->flags &= ~PREV_WHITE;
++	  result->flags &= ~(PREV_WHITE | AVOID_LPASTE);
+ 	  goto next_char;
+ 	}
+ 
+@@ -1196,7 +1197,7 @@ _cpp_lex_token (pfile, result)
+ 
+ 	      /* Get whitespace right - newline_in_args sets it.  */
+ 	      if (pfile->lexer_pos.col == 1)
+-		result->flags &= ~PREV_WHITE;
++		result->flags &= ~(PREV_WHITE | AVOID_LPASTE);
+ 	    }
+ 	  else
+ 	    {
+--- gcc/cppmacro.c	2001/01/31 07:48:54	1.41
++++ gcc/cppmacro.c	2001/02/01 18:59:57
+@@ -146,6 +146,7 @@ builtin_macro (pfile, token)
+      cpp_reader *pfile;
+      cpp_token *token;
+ {
++  unsigned char flags = ((token->flags & PREV_WHITE) | AVOID_LPASTE);
+   cpp_hashnode *node = token->val.node;
+ 
+   switch (node->value.builtin)
+@@ -219,6 +220,8 @@ builtin_macro (pfile, token)
+       cpp_ice (pfile, "invalid builtin macro \"%s\"", node->name);
+       break;
+     }
++
++  token->flags = flags;
+ }
+ 
+ /* Used by cpperror.c to obtain the correct line and column to report
+@@ -458,7 +461,7 @@ paste_all_tokens (pfile, lhs)
+   /* The pasted token has the PREV_WHITE flag of the LHS, is no longer
+      PASTE_LEFT, and is subject to macro expansion.  */
+   lhs->flags &= ~(PREV_WHITE | PASTE_LEFT | NO_EXPAND);
+-  lhs->flags |= orig_flags & PREV_WHITE;
++  lhs->flags |= orig_flags & (PREV_WHITE | AVOID_LPASTE);
+ }
+ 
+ /* Reads the unexpanded tokens of a macro argument into ARG.  VAR_ARGS
+@@ -798,11 +801,11 @@ replace_args (pfile, macro, args, list)
+ 	    /* The first token gets PREV_WHITE of the CPP_MACRO_ARG.  */
+ 	    dest->flags &= ~PREV_WHITE;
+ 	    dest->flags |= src->flags & PREV_WHITE;
++	    dest->flags |= AVOID_LPASTE;
+ 
+ 	    /* The last token gets the PASTE_LEFT of the CPP_MACRO_ARG.  */
+ 	    dest[count - 1].flags |= src->flags & PASTE_LEFT;
+ 
+-	    dest[0].flags |= AVOID_LPASTE;
+ 	    dest += count;
+ 	  }
+ 
+@@ -906,10 +909,6 @@ cpp_get_token (pfile, token)
+      cpp_reader *pfile;
+      cpp_token *token;
+ {
+-  unsigned char flags = pfile->saved_flags;
+-
+-  pfile->saved_flags = 0;
+-
+   for (;;)
+     {
+       cpp_context *context = pfile->context;
+@@ -922,11 +921,13 @@ cpp_get_token (pfile, token)
+       else if (context->list.first != context->list.limit)
+ 	{
+ 	  *token = *context->list.first++;
++	  token->flags |= pfile->buffer->saved_flags;
++	  pfile->buffer->saved_flags = 0;
+ 	  /* PASTE_LEFT tokens can only appear in macro expansions.  */
+ 	  if (token->flags & PASTE_LEFT)
+ 	    {
+ 	      paste_all_tokens (pfile, token);
+-	      pfile->saved_flags = AVOID_LPASTE;
++	      pfile->buffer->saved_flags = AVOID_LPASTE;
+ 	    }
+ 	}
+       else
+@@ -934,7 +935,7 @@ cpp_get_token (pfile, token)
+ 	  if (context->macro)
+ 	    {
+ 	      /* Avoid accidental paste at the end of a macro.  */
+-	      flags |= AVOID_LPASTE;
++	      pfile->buffer->saved_flags |= AVOID_LPASTE;
+ 	      _cpp_pop_context (pfile);
+ 	      continue;
+ 	    }
+@@ -944,8 +945,6 @@ cpp_get_token (pfile, token)
+ 	  return;
+ 	}
+ 
+-      token->flags |= flags;
+-      flags = 0;
+       if (token->type != CPP_NAME)
+ 	break;
+ 
+@@ -959,20 +958,21 @@ cpp_get_token (pfile, token)
+ 	  /* Macros invalidate controlling macros.  */
+ 	  pfile->mi_state = MI_FAILED;
+ 
+-	  /* Remember PREV_WHITE and avoid an accidental paste.  */
+-	  flags = (token->flags & PREV_WHITE) | AVOID_LPASTE;
+-
+ 	  if (node->flags & NODE_BUILTIN)
+ 	    {
+ 	      builtin_macro (pfile, token);
+-	      token->flags = flags;
+ 	      break;
+ 	    }
+ 
+ 	  if (node->value.macro->disabled)
+ 	    token->flags |= NO_EXPAND;
+ 	  else if (enter_macro_context (pfile, node))
+-	    continue;
++	    {
++	      /* Pass AVOID_LPASTE and our PREV_WHITE to next token.  */
++	      pfile->buffer->saved_flags = ((token->flags & PREV_WHITE)
++					    | AVOID_LPASTE);
++	      continue;
++	    }
+ 	}
+ 
+       /* Don't interpret _Pragma within directives.  The standard is
+--- gcc/cppmain.c	2001/01/28 11:22:22	1.60
++++ gcc/cppmain.c	2001/02/01 18:59:57
+@@ -234,8 +234,7 @@ scan_buffer (pfile)
+ 		    putc (' ', print.outf);
+ 		}
+ 	    }
+-	  else if (print.printed
+-		   && (token->flags & (PREV_WHITE | AVOID_LPASTE))
++	  else if ((token->flags & (PREV_WHITE | AVOID_LPASTE))
+ 		       == AVOID_LPASTE
+ 		   && cpp_avoid_paste (pfile, &tokens[1 - index], token))
+ 	    token->flags |= PREV_WHITE;
+--- gcc/testsuite/gcc.dg/cpp/avoidpaste2.c	Tue May  5 13:32:27 1998
++++ gcc/testsuite/gcc.dg/cpp/avoidpaste2.c	Thu Feb  1 10:59:57 2001
+@@ -0,0 +1,35 @@
++/* Copyright (C) 2001 Free Software Foundation, Inc.  */
++
++/* { dg-do preprocess } */
++
++/* This tests that we avoid accidental pasting, as well as gratuitous
++   space insertion, in various nasty places _inside_ a macro's
++   replacement list: on either side of a paste, and on either side of
++   an argument.  It also tests that we don't pass empty macro leading
++   whitespace to the next line - this problem use to break Emacs
++   preprocessor abuse.
++
++   Neil Booth, 1 Feb 2001.  */
++
++#define EMPTY_WITH_LEADING_SPACE
++#define f(x, y) :x: -y##> -##y>
++#define g(x, y) :x: :y##2 2##y:
++
++/* This should preprocess as
++
++: : : - > - >
++:2: :22 22:
++
++We used to get a space at the start of the line.  */
++
++ EMPTY_WITH_LEADING_SPACE
++f(:,) 
++g(2, 2)
++
++/*
++   { dg-final { if ![file exists avoidpaste2.i] { return }                } }
++   { dg-final { if { [grep avoidpaste2.i "^: : : - > - >"] != "" } \{     } }
++   { dg-final { if { [grep avoidpaste2.i "^:2: :22 22:"] != "" }   \{     } }
++   { dg-final { return \} \}                                              } }
++   { dg-final { fail "avoidpaste2.c: paste avoidance"                     } }
++*/

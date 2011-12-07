@@ -1,0 +1,194 @@
+2001-11-16  Andrew Macleod  <amacleod@cygnus.com>
+
+	* rtl.h (initialize_uninitialized_subregs): New prototype.
+	* toplev.c (rest_of_compilation): Call initialize_uninitialized_subregs
+	when optimization is on.
+	* flow.c (find_regno_partial): Find subregs within an expression.
+	(initialize_uninitialized_subregs): Initialize live on entry
+	registers which are used in subreg expressions.
+
+2001-11-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/compile/20011120-1.c: New test.
+
+--- gcc/testsuite/gcc.c-torture/compile/20011120-1.c.jj	Tue Nov 20 18:27:39 2001
++++ gcc/testsuite/gcc.c-torture/compile/20011120-1.c	Tue Nov 20 15:32:20 2001
+@@ -0,0 +1,21 @@
++typedef union {
++  unsigned l:16;
++  struct {
++    unsigned a:8;
++    unsigned b:8;
++  } s;
++} u;
++
++extern unsigned char foo (void);
++extern int bar (void);
++
++void baz (void)
++{
++  u x;
++
++  x.l = 0;
++  x.s.a = foo ();
++  x.s.b = foo ();
++  if (x.l)
++    bar ();
++}
+--- gcc/rtl.h.jj	Mon Nov 12 15:45:41 2001
++++ gcc/rtl.h	Tue Nov 20 15:21:54 2001
+@@ -1768,6 +1768,7 @@ extern void move_by_pieces		PARAMS ((rtx
+ extern void allocate_bb_life_data	PARAMS ((void));
+ extern void allocate_reg_life_data	PARAMS ((void));
+ extern void recompute_reg_usage		PARAMS ((rtx, int));
++extern int initialize_uninitialized_subregs	PARAMS ((void));
+ #ifdef BUFSIZ
+ extern void print_rtl_with_bb		PARAMS ((FILE *, rtx));
+ extern void dump_flow_info		PARAMS ((FILE *));
+--- gcc/toplev.c.jj	Mon Nov 12 15:46:12 2001
++++ gcc/toplev.c	Tue Nov 20 18:21:15 2001
+@@ -3189,6 +3189,20 @@ rest_of_compilation (decl)
+ 	setjmp_args_warning ();
+     }
+ 
++  if (optimize)
++    {
++      if (initialize_uninitialized_subregs ())
++	{
++	  /* Insns were inserted, so things might look a bit different.  */
++	  insns = get_insns();
++	  find_basic_blocks (insns, max_reg_num (), rtl_dump_file);
++	  cleanup_cfg (insns);
++	  clear_log_links (insns);
++	  life_analysis (insns, rtl_dump_file,
++			 (PROP_LOG_LINKS | PROP_REG_INFO));
++	}
++    }
++
+   close_dump_file (DFI_life, print_rtl_with_bb, insns);
+ 
+   if (ggc_p)
+--- gcc/flow.c.jj	Mon Nov 12 15:46:14 2001
++++ gcc/flow.c	Tue Nov 20 15:21:05 2001
+@@ -360,6 +360,8 @@ static void mark_set_regs		PARAMS ((stru
+ static void mark_set_1			PARAMS ((struct propagate_block_info *,
+ 						 enum rtx_code, rtx, rtx,
+ 						 rtx, int));
++static int find_regno_partial		PARAMS ((rtx *, void *));
++
+ #ifdef HAVE_conditional_execution
+ static int mark_regno_cond_dead		PARAMS ((struct propagate_block_info *,
+ 						 int, rtx));
+@@ -3293,6 +3295,112 @@ calculate_global_regs_live (blocks_in, b
+ 
+   free (queue);
+ }
++
++
++/* This structure is used to pass parameters to an from the
++   the function find_regno_partial(). It is used to pass in the 
++   register number we are looking, as well as to return any rtx 
++   we find.  */
++
++typedef struct {
++  unsigned regno_to_find;
++  rtx retval;
++} find_regno_partial_param;
++
++
++/* Find the rtx for the reg numbers specified in 'data' if it is
++   part of an expression which only uses part of the register.  Return
++   it in the structure passed in.  */
++static int 
++find_regno_partial (ptr, data)
++     rtx *ptr;
++     void *data;
++{
++  find_regno_partial_param *param = (find_regno_partial_param *)data;
++  unsigned reg = param->regno_to_find;
++  param->retval = NULL_RTX;
++
++  if (*ptr == NULL_RTX)
++    return 0;
++
++  switch (GET_CODE (*ptr)) 
++    {
++      case ZERO_EXTRACT:
++      case SIGN_EXTRACT:
++      case STRICT_LOW_PART:
++        if (GET_CODE (XEXP (*ptr, 0)) == REG && REGNO (XEXP (*ptr, 0)) == reg)
++	  {
++	    param->retval = *ptr;
++	    return 1;
++	  }
++	break;
++
++      case SUBREG:
++        if (GET_CODE (SUBREG_REG (*ptr)) == REG 
++	    && REGNO (SUBREG_REG (*ptr)) == reg)
++	  {
++	    param->retval = *ptr;
++	    return 1;
++	  }
++	break;
++    }
++
++  return 0;
++}
++
++/* Process all immediate successors of the entry block looking for pseudo
++   registers which are live on entry. Find all of those whose first 
++   instance is a partial register reference of some kind, and initialize 
++   them to 0 after the entry block.  This will prevent bit sets within
++   registers whose value is unknown, and may contain some kind of sticky 
++   bits we don't want.  */
++
++int
++initialize_uninitialized_subregs () 
++{
++  rtx insn;
++  edge e;
++  int reg, did_something = 0;
++  find_regno_partial_param param;
++
++  for (e = ENTRY_BLOCK_PTR->succ; e; e = e->succ_next)
++    {
++      basic_block bb = e->dest;
++      regset map = bb->global_live_at_start;
++      EXECUTE_IF_SET_IN_REG_SET (map,
++				 FIRST_PSEUDO_REGISTER, reg,
++	{
++	  int uid = REGNO_FIRST_UID (reg);
++	  rtx i;
++
++	  /* Find an insn which mentions the register we are looking for.
++	     Its preferable to have an instance of the register's rtl since
++	     there may be various flags set which we need to duplicate.  
++	     If we can't find it, its probably an automatic whose initial
++	     value doesnt matter, or hopefully something we dont care about. */
++	  for (i = get_insns (); i && INSN_UID (i) != uid; i = NEXT_INSN (i))
++	    ;
++	  if (i != NULL_RTX)
++	    {
++	      /* Found the insn, now get the REG rtx, if we can.  */
++	      param.regno_to_find = reg;
++	      for_each_rtx (&i, find_regno_partial, &param);
++	      if (param.retval != NULL_RTX)
++		{
++		  insn = gen_move_insn (param.retval, 
++				        CONST0_RTX (GET_MODE (param.retval)));
++		  insert_insn_on_edge (insn, e);
++		  did_something = 1;
++		}
++	    }
++	});
++    }
++
++  if (did_something)
++    commit_edge_insertions ();
++  return did_something;
++}
++
+ 
+ /* Subroutines of life analysis.  */
+ 

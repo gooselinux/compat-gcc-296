@@ -1,0 +1,458 @@
+2001-02-21  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cppfiles.c: Update comments.
+	(_cpp_read_file): Don't check for NULL filenames any more.
+	* cppinit.c (cpp_start_read): Don't do canonicalization of
+	in_fname and out_fname.  Use the passed file name exclusively.
+	(_cpp_handle_options): Don't treat "-" as a command line option,
+	but as a normal filename.
+	(_cpp_post_options): Canonicalize in_fname and out_fname.
+	* cppmain.c (printer_init): Don't check out_fname for NULL.
+	* c-lex.c (orig_filename): Rename cpp_filename for clarity.
+	(init_c_lex): Update, and use "" to represent stdin to CPP.
+	(yyparse): Update.
+
+2001-02-16  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cppfiles.c (_cpp_make_system_header): Generate a file
+	change callback.
+
+2001-02-14  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* mkdeps.c (deps_add_default_target): Robustify. Add
+	basename component only.
+
+2001-02-09  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* gcc.c (cpp_options): Delete .d files on error.  Don't delete
+	.o files when using the -M options.
+
+2001-02-07  Zack Weinberg  <zack@wolery.stanford.edu>
+
+	* cppinit.c (append_include_chain): cxx_aware arg might be unused.
+
+2001-01-10  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* gcc.c (cpp_options): Set MD file name from output
+	filename, if specified.
+	(suffix_subst): New static variable.
+	(do_spec): Clear it.
+	(do_spec_1, case '.'): Handle new %.suffix' spec.
+	Clear it.
+        (give_switch): Handle suffix_subst.
+
+--- gcc/cppfiles.c	Fri Feb  9 01:35:14 2001
++++ gcc/cppfiles.c	Thu Feb 22 13:56:01 2001
+@@ -175,7 +174,8 @@ _cpp_fake_include (pfile, fname)
+    create one with a non-NULL value (regardless of success in opening
+    the file).  If the file doesn't exist or is inaccessible, this
+    entry is flagged so we don't attempt to open it again in the
+-   future.  If the file isn't open, open it.
++   future.  If the file isn't open, open it.  The empty string is
++   interpreted as stdin.
+ 
+    Returns an include_file structure with an open file descriptor on
+    success, or NULL on failure.  */
+@@ -531,6 +531,8 @@ cpp_make_system_header (pfile, syshdr, e
+   if (syshdr)
+     flags = 1 + (externc != 0);
+   pfile->buffer->sysp = flags;
++  _cpp_do_file_change (pfile, FC_RENAME, pfile->buffer->nominal_fname,
++		       pfile->buffer->lineno);
+ }
+ 
+ /* Report on all files that might benefit from a multiple include guard.
+@@ -747,18 +749,13 @@ _cpp_compare_file_date (pfile, f)
+ 
+ 
+ /* Push an input buffer and load it up with the contents of FNAME.
+-   If FNAME is "" or NULL, read standard input.  */
++   If FNAME is "", read standard input.  */
+ int
+ _cpp_read_file (pfile, fname)
+      cpp_reader *pfile;
+      const char *fname;
+ {
+-  struct include_file *f;
+-
+-  if (fname == NULL)
+-    fname = "";
+-
+-  f = open_file (pfile, fname);
++  struct include_file *f = open_file (pfile, fname);
+ 
+   if (f == NULL)
+     {
+--- gcc/cpphash.h	Fri Feb  9 01:35:16 2001
++++ gcc/cpphash.h	Mon Feb 12 10:35:23 2001
+@@ -43,14 +43,15 @@ struct htab;
+ #define CPP_STACK_MAX 200
+ 
+ /* Memory pools.  */
+-#define ALIGN(size, align) (((size) + ((align) - 1)) & ~((align) - 1))
++#define POOL_ALIGN(size, align) (((size) + ((align) - 1)) & ~((align) - 1))
+ #define POOL_FRONT(p) ((p)->cur->front)
+ #define POOL_LIMIT(p) ((p)->cur->limit)
+ #define POOL_BASE(p)  ((p)->cur->base)
+ #define POOL_SIZE(p)  ((p)->cur->limit - (p)->cur->base)
+ #define POOL_ROOM(p)  ((p)->cur->limit - (p)->cur->front)
+ #define POOL_USED(p)  ((p)->cur->front - (p)->cur->base)
+-#define POOL_COMMIT(p, len) do {((p)->cur->front += ALIGN (len, (p)->align));\
++#define POOL_COMMIT(p, len) do {\
++  ((p)->cur->front += POOL_ALIGN (len, (p)->align));\
+   if ((p)->cur->front > (p)->cur->limit) abort ();} while (0)
+ 
+ typedef struct cpp_chunk cpp_chunk;
+--- gcc/cppinit.c	Fri Feb  9 01:35:16 2001
++++ gcc/cppinit.c	Thu Feb 22 13:56:01 2001
+@@ -204,7 +203,7 @@ append_include_chain (pfile, dir, path, 
+      cpp_reader *pfile;
+      char *dir;
+      int path;
+-     int cxx_aware;
++     int cxx_aware ATTRIBUTE_UNUSED;
+ {
+   struct cpp_pending *pend = CPP_OPTION (pfile, pending);
+   struct file_name_list *new;
+@@ -875,9 +878,8 @@ do_includes (pfile, p, scan)
+ }
+ 
+ /* This is called after options have been processed.  Setup for
+-   processing input from the file named FNAME.  (Use standard input if
+-   FNAME == NULL.)  Return 1 on success, 0 on failure.  */
+-
++   processing input from the file named FNAME, or stdin if it is the
++   empty string.  Return 1 on success, 0 on failure.  */
+ int
+ cpp_start_read (pfile, fname)
+      cpp_reader *pfile;
+@@ -905,19 +907,9 @@ cpp_start_read (pfile, fname)
+       fprintf (stderr, _("End of search list.\n"));
+     }
+ 
+-  if (CPP_OPTION (pfile, in_fname) == NULL
+-      || *CPP_OPTION (pfile, in_fname) == 0)
+-    {
+-      CPP_OPTION (pfile, in_fname) = fname;
+-      if (CPP_OPTION (pfile, in_fname) == NULL)
+-	CPP_OPTION (pfile, in_fname) = "";
+-    }
+-  if (CPP_OPTION (pfile, out_fname) == NULL)
+-    CPP_OPTION (pfile, out_fname) = "";
+-
+   if (CPP_OPTION (pfile, print_deps))
+     /* Set the default target (if there is none already).  */
+-    deps_add_default_target (pfile->deps, CPP_OPTION (pfile, in_fname));
++    deps_add_default_target (pfile->deps, fname);
+ 
+   /* Open the main input file.  This must be done early, so we have a
+      buffer to stand on.  */
+@@ -1044,7 +1036,6 @@ new_pending_directive (pend, text, handl
+ /* This is the list of all command line options, with the leading
+    "-" removed.  It must be sorted in ASCII collating order.  */
+ #define COMMAND_LINE_OPTIONS                                                  \
+-  DEF_OPT("",                         0,      OPT_stdin_stdout)               \
+   DEF_OPT("$",                        0,      OPT_dollar)                     \
+   DEF_OPT("+",                        0,      OPT_plus)                       \
+   DEF_OPT("-help",                    0,      OPT__help)                      \
+@@ -1218,15 +1208,16 @@ cpp_handle_option (pfile, argc, argv)
+   int i = 0;
+   struct cpp_pending *pend = CPP_OPTION (pfile, pending);
+ 
+-  if (argv[i][0] != '-')
++  /* Interpret "-" or a non-option as a file name.  */
++  if (argv[i][0] != '-' || argv[i][1] == '\0')
+     {
+-      if (CPP_OPTION (pfile, out_fname) != NULL)
+-	cpp_fatal (pfile, "Too many arguments. Type %s --help for usage info",
+-		   progname);
+-      else if (CPP_OPTION (pfile, in_fname) != NULL)
++      if (CPP_OPTION (pfile, in_fname) == NULL)
++	CPP_OPTION (pfile, in_fname) = argv[i];
++      else if (CPP_OPTION (pfile, out_fname) == NULL)
+ 	CPP_OPTION (pfile, out_fname) = argv[i];
+       else
+-	CPP_OPTION (pfile, in_fname) = argv[i];
++	cpp_fatal (pfile, "Too many filenames. Type %s --help for usage info",
++		   progname);
+     }
+   else
+     {
+@@ -1412,21 +1400,13 @@ cpp_handle_option (pfile, argc, argv)
+ 	  CPP_OPTION (pfile, no_standard_cplusplus_includes) = 1;
+ 	  break;
+ 	case OPT_o:
+-	  if (CPP_OPTION (pfile, out_fname) != NULL)
++	  if (CPP_OPTION (pfile, out_fname) == NULL)
++	    CPP_OPTION (pfile, out_fname) = arg;
++	  else
+ 	    {
+ 	      cpp_fatal (pfile, "Output filename specified twice");
+ 	      return argc;
+ 	    }
+-	  CPP_OPTION (pfile, out_fname) = arg;
+-	  if (!strcmp (CPP_OPTION (pfile, out_fname), "-"))
+-	    CPP_OPTION (pfile, out_fname) = "";
+-	  break;
+-	case OPT_stdin_stdout:
+-	  /* JF handle '-' as file name meaning stdin or stdout.  */
+-	  if (CPP_OPTION (pfile, in_fname) == NULL)
+-	    CPP_OPTION (pfile, in_fname) = "";
+-	  else if (CPP_OPTION (pfile, out_fname) == NULL)
+-	    CPP_OPTION (pfile, out_fname) = "";
+ 	  break;
+ 	case OPT_d:
+ 	  /* Args to -d specify what parts of macros to dump.
+@@ -1690,6 +1670,16 @@ void
+ cpp_post_options (pfile)
+      cpp_reader *pfile;
+ {
++  /* Canonicalize in_fname and out_fname.  We guarantee they are not
++     NULL, and that the empty string represents stdin / stdout.  */
++  if (CPP_OPTION (pfile, in_fname) == NULL
++      || !strcmp (CPP_OPTION (pfile, in_fname), "-"))
++    CPP_OPTION (pfile, in_fname) = "";
++
++  if (CPP_OPTION (pfile, out_fname) == NULL
++      || !strcmp (CPP_OPTION (pfile, out_fname), "-"))
++    CPP_OPTION (pfile, out_fname) = "";
++
+   /* -Wtraditional is not useful in C++ mode.  */
+   if (CPP_OPTION (pfile, cplusplus))
+     CPP_OPTION (pfile, warn_traditional) = 0;
+--- gcc/cpplex.c	Fri Feb  9 01:35:16 2001
++++ gcc/cpplex.c	Mon Feb 12 10:35:23 2001
+@@ -1760,7 +1759,7 @@ new_chunk (size)
+   unsigned char *base;
+   cpp_chunk *result;
+ 
+-  size = ALIGN (size, DEFAULT_ALIGNMENT);
++  size = POOL_ALIGN (size, DEFAULT_ALIGNMENT);
+   base = (unsigned char *) xmalloc (size + sizeof (cpp_chunk));
+   /* Put the chunk descriptor at the end.  Then chunk overruns will
+      cause obvious chaos.  */
+@@ -1827,7 +1826,7 @@ _cpp_pool_reserve (pool, len)
+      cpp_pool *pool;
+      unsigned int len;
+ {
+-  len = ALIGN (len, pool->align);
++  len = POOL_ALIGN (len, pool->align);
+   if (len > (unsigned int) POOL_ROOM (pool))
+     _cpp_next_chunk (pool, len, 0);
+ 
+--- gcc/cpplib.c	Fri Feb  9 01:35:14 2001
++++ gcc/cpplib.c	Thu Feb  1 11:14:51 2001
+@@ -129,7 +128,7 @@ D(else,		T_ELSE,		KANDR,     COND)	   /*
+ D(ifndef,	T_IFNDEF,	KANDR,     COND | IF_COND) /*   9675 */ \
+ D(undef,	T_UNDEF,	KANDR,     IN_I)	   /*   4837 */ \
+ D(line,		T_LINE,		KANDR,     IN_I)	   /*   2465 */ \
+-D(elif,		T_ELIF,		KANDR,     COND)	   /*    610 */ \
++D(elif,		T_ELIF,		STDC89,    COND)	   /*    610 */ \
+ D(error,	T_ERROR,	STDC89,    0)		   /*    475 */ \
+ D(pragma,	T_PRAGMA,	STDC89,    IN_I)	   /*    195 */ \
+ D(warning,	T_WARNING,	EXTENSION, 0)		   /*     22 */ \
+@@ -162,7 +161,6 @@ DIRECTIVE_TABLE
+ #define D(n, tag, o, f) tag,
+ enum
+ {
+-  T_BAD_DIRECTIVE,
+   DIRECTIVE_TABLE
+   N_DIRECTIVES
+ };
+@@ -323,7 +321,10 @@ _cpp_handle_directive (pfile, indented)
+ 	     conditional blocks.  */
+ 	  if (CPP_WTRADITIONAL (pfile))
+ 	    {
+-	      if (indented && dir->origin == KANDR)
++	      if (dir == &dtable[T_ELIF])
++		cpp_warning (pfile,
++			     "suggest not using #elif in traditional C");
++	      else if (indented && dir->origin == KANDR)
+ 		cpp_warning (pfile,
+ 			     "traditional C ignores #%s with the # indented",
+ 			     dir->name);
+@@ -1871,17 +1872,17 @@ void
+ _cpp_init_stacks (pfile)
+      cpp_reader *pfile;
+ {
+-  int i;
++  unsigned int i;
+   cpp_hashnode *node;
+ 
+   pfile->buffer_ob = xnew (struct obstack);
+   obstack_init (pfile->buffer_ob);
+ 
+   /* Register the directives.  */
+-  for (i = 1; i < N_DIRECTIVES; i++)
++  for (i = 0; i < N_DIRECTIVES; i++)
+     {
+-      node = cpp_lookup (pfile, dtable[i - 1].name, dtable[i - 1].length);
+-      node->directive_index = i;
++      node = cpp_lookup (pfile, dtable[i].name, dtable[i].length);
++      node->directive_index = i + 1;
+     }
+ }
+ 
+--- gcc/cppmain.c	Fri Feb  9 01:35:16 2001
++++ gcc/cppmain.c	Thu Feb 22 13:56:01 2001
+@@ -272,9 +271,6 @@ printer_init (pfile)
+   print.lineno = 0;
+   print.printed = 0;
+ 
+-  if (options->out_fname == NULL)
+-    options->out_fname = "";
+-  
+   if (options->out_fname[0] == '\0')
+     print.outf = stdout;
+   else
+--- gcc/mkdeps.c	Sun Jan  7 12:30:24 2001
++++ gcc/mkdeps.c	Thu Feb 15 17:34:00 2001
+@@ -180,8 +180,6 @@ deps_add_default_target (d, tgt)
+      struct deps *d;
+      const char *tgt;
+ {
+-  char *o, *suffix;
+-
+   /* Only if we have no targets.  */
+   if (d->ntargets)
+     return;
+@@ -190,19 +188,20 @@ deps_add_default_target (d, tgt)
+     deps_add_target (d, "-", 1);
+   else
+     {
+-      o = (char *) alloca (strlen (tgt) + 8);
+-
+-      strcpy (o, tgt);
+-      suffix = strrchr (o, '.');
+-
+ #ifndef OBJECT_SUFFIX
+ # define OBJECT_SUFFIX ".o"
+ #endif
++      char *start = basename (tgt);
++      char *o = (char *) alloca (strlen (start) + strlen (OBJECT_SUFFIX) + 1);
++      char *suffix;
+ 
+-      if (suffix)
+-	strcpy (suffix, OBJECT_SUFFIX);
+-      else
+-	strcat (o, OBJECT_SUFFIX);
++      strcpy (o, start);
++      
++      suffix = strrchr (o, '.');
++      if (!suffix)
++        suffix = o + strlen (o);
++      strcpy (suffix, OBJECT_SUFFIX);
++      
+       deps_add_target (d, o, 1);
+     }
+ }
+--- gcc/gcc.c.jj	Fri Feb  9 01:35:15 2001
++++ gcc/gcc.c	Thu Feb 22 15:49:19 2001
+@@ -292,6 +292,10 @@ or with constant text in a single argume
+ 	for each `%g.s' and another for each `%U.s'.  Previously, %U was
+ 	simply substituted with a file name chosen for the previous %u,
+ 	without regard to any appended suffix.
++ %.SUFFIX
++	substitutes .SUFFIX for the suffixes of a matched switch's args when
++	it is subsequently output with %*. SUFFIX is terminated by the next
++	space or %.
+  %d	marks the argument containing or following the %d as a
+ 	temporary file name, so that that file will be deleted if CC exits
+ 	successfully.  Unlike %g, this contributes no text to the argument.
+@@ -554,8 +558,9 @@ static const char *cpp_options =
+ "%{C:%{!E:%eGNU C does not support -C without using -E}}\
+  %{std*} %{nostdinc*}\
+  %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
+- %{MD:-M -MF %b.d} %{MMD:-MM -MF %b.d}\
+- %{M} %{MM} %{MF*} %{MG} %{MP} %{MQ*} %{MT*} %{M|MD|MM|MMD:%{o*:-MQ %*}}\
++ %{MD:-M -MF %W{!o: %b.d}%W{o*:%.d%*}}\
++ %{MMD:-MM -MF %W{!o: %b.d}%W{o*:%.d%*}}\
++ %{M} %{MM} %W{MF*} %{MG} %{MP} %{MQ*} %{MT*} %{M|MD|MM|MMD:%{o*:-MQ %*}}\
+  %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2 -D__GNUC_PATCHLEVEL__=%v3}\
+  %{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
+  %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
+@@ -565,7 +570,7 @@ static const char *cpp_options =
+  %{fleading-underscore} %{fno-leading-underscore}\
+  %{foperator-names} %{fno-operator-names} %{ftabstop=*} %{remap}\
+  %{g3:-dD} %{W*} %{w} %{pedantic*} %{H} %{d*} %C %{D*} %{U*} %{i*} %Z %i\
+- %{E:%W{o*}}%{M:%W{o*}}%{MM:%W{o*}}";
++ %{E:%{!M*:%W{o*}}}";
+ 
+ static const char *cc1_options =
+ "%{pg:%{fomit-frame-pointer:%e-pg and -fomit-frame-pointer are incompatible}}\
+@@ -3688,6 +3693,10 @@ static int this_is_library_file;
+ /* Nonzero means that the input of this command is coming from a pipe.  */
+ static int input_from_pipe;
+ 
++/* Nonnull means substitute this for any suffix when outputting a switches
++   arguments. */
++static const char *suffix_subst;
++
+ /* Process the spec SPEC and run the commands specified therein.
+    Returns 0 if the spec is successfully processed; -1 if failed.  */
+ 
+@@ -3703,6 +3712,7 @@ do_spec (spec)
+   this_is_output_file = 0;
+   this_is_library_file = 0;
+   input_from_pipe = 0;
++  suffix_subst = NULL;
+ 
+   value = do_spec_1 (spec, 0, NULL_PTR);
+ 
+@@ -4467,6 +4477,17 @@ do_spec_1 (spec, inswitch, soft_matched_
+ 	    obstack_1grow (&obstack, '%');
+ 	    break;
+ 
++         case '.':
++	   {
++	     unsigned len = 0;
++
++	     while (p[len] && p[len] != ' ' && p[len] != '%')
++	       len++;
++             suffix_subst = save_string (p - 1, len + 1);
++             p += len;
++           }
++	   break;
++          
+ 	  case '*':
+ 	    if (soft_matched_part)
+ 	      {
+@@ -4802,6 +4823,7 @@ next_member:
+ 		    do_spec_1 (string, 0, &switches[i].part1[hard_match_len]);
+ 		    /* Pass any arguments this switch has.  */
+ 		    give_switch (i, 1, 1);
++		    suffix_subst = NULL;
+ 		  }
+ 
+ 	      /* We didn't match.  Try again.  */
+@@ -4986,9 +5008,29 @@ give_switch (switchnum, omit_first_word,
+       const char **p;
+       for (p = switches[switchnum].args; *p; p++)
+ 	{
++	  const char *arg = *p;
++
+ 	  if (include_blanks)
+ 	    do_spec_1 (" ", 0, NULL_PTR);
+-	  do_spec_1 (*p, 1, NULL_PTR);
++	  if (suffix_subst)
++	    {
++	      unsigned length = strlen (arg);
++
++	      while (length-- && !IS_DIR_SEPARATOR (arg[length]))
++		if (arg[length] == '.')
++		  {
++		    ((char *)arg)[length] = 0;
++		    break;
++		  }
++	      do_spec_1 (arg, 1, NULL_PTR);
++	      if (!arg[length])
++		{
++		  ((char *)arg)[length] = '.';
++		  do_spec_1 (suffix_subst, 1, NULL_PTR);
++		}
++	    }
++	  else
++	    do_spec_1 (arg, 1, NULL_PTR);
+ 	}
+     }
+ 

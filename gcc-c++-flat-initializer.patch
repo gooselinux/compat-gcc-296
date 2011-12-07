@@ -1,0 +1,48 @@
+2001-11-14  Richard Sandiford  <rsandifo@redhat.com>
+
+	* decl.c (check_initializer): Try to complete the type of an
+	array element before checking whether it's complete.  Don't
+	complain about arrays with complete element types but an
+	unknown size.
+	(cp_finish_decl): Build the hierarchical constructor before
+	calling maybe_deduce_size_from_array_init.
+
+	* g++.old-deja/g++.other/array4.C: New test.
+
+--- gcc/cp/decl.c.jj	2001/11/08 19:04:43	1.823
++++ gcc/cp/decl.c	2001/11/14 12:53:09	1.824
+@@ -7709,12 +7709,12 @@ check_initializer (decl, init)
+ 	  init = NULL_TREE;
+ 	}
+       else if (TREE_CODE (type) == ARRAY_TYPE
+-	       && !COMPLETE_TYPE_P (TREE_TYPE (type)))
++	       && !COMPLETE_TYPE_P (complete_type (TREE_TYPE (type))))
+ 	{
+ 	  cp_error ("elements of array `%#D' have incomplete type", decl);
+ 	  init = NULL_TREE;
+ 	}
+-      else if (!COMPLETE_TYPE_P (type))
++      else if (TREE_CODE (type) != ARRAY_TYPE && !COMPLETE_TYPE_P (type))
+ 	{
+ 	  cp_error ("`%D' has incomplete type", decl);
+ 	  TREE_TYPE (decl) = error_mark_node;
+@@ -8154,8 +8154,8 @@ cp_finish_decl (decl, init, asmspec_tree
+     }
+ 
+   /* Deduce size of array from initialization, if not already known.  */
+-  maybe_deduce_size_from_array_init (decl, init);
+   init = check_initializer (decl, init);
++  maybe_deduce_size_from_array_init (decl, init);
+ 
+   GNU_xref_decl (current_function_decl, decl);
+ 
+--- gcc/testsuite/g++.old-deja/g++.other/array4.C.jj	Wed Feb 27 14:35:26 2002
++++ gcc/testsuite/g++.old-deja/g++.other/array4.C	Wed Feb 27 14:35:51 2002
+@@ -0,0 +1,7 @@
++// Check that the type of an array is set correctly when flat initializers
++// are used.
++// Build don't link:
++
++struct s { int a; int b; };
++struct s x[] = { 1, 2, 3, 4 };
++int y[sizeof (x) == 2 * sizeof (x[0])? 1 : -1];

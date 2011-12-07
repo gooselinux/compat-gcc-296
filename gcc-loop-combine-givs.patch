@@ -1,0 +1,48 @@
+2001-09-03  Jakub Jelinek  <jakub@redhat.com>
+
+	* loop.c (express_from_1): Fix CONSTANT_P(a) case.
+
+	* gcc.c-torture/compile/20010903-1.c: New test.
+
+--- gcc/loop.c.jj	Mon Aug 20 22:26:48 2001
++++ gcc/loop.c	Mon Sep  3 18:27:13 2001
+@@ -6860,7 +6860,7 @@ express_from_1 (a, b, mult)
+     }
+   else if (CONSTANT_P (a))
+     {
+-      return simplify_gen_binary (MINUS, GET_MODE (b) != VOIDmode ? GET_MODE (b) : GET_MODE (a), const0_rtx, a);
++      return simplify_gen_binary (MINUS, GET_MODE (b) != VOIDmode ? GET_MODE (b) : GET_MODE (a), b, a);
+     }
+   else if (GET_CODE (b) == PLUS)
+     {
+--- gcc/testsuite/gcc.c-torture/compile/20010903-1.c.jj	Mon Sep  3 18:28:15 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010903-1.c	Mon Sep  3 18:29:19 2001
+@@ -0,0 +1,28 @@
++struct A {
++  long a;
++};
++
++static inline void foo(struct A *x)
++{
++  __asm__ __volatile__("" : "+m"(x->a) : "r"(x) : "memory", "cc");
++}
++
++static inline void bar(struct A *x)
++{
++  foo(x);
++}
++
++struct B { char buf[640]; struct A a; };
++struct B b[32];
++
++int baz(void)
++{
++  int i;
++  struct B *j;
++  for (i = 1; i < 32; i++)
++    {
++      j = &b[i];
++      bar(&j->a);
++    }
++  return 0;
++}

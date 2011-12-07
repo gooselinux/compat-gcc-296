@@ -1,0 +1,56 @@
+2001-03-28  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* reload1.c (eliminate_regs): Don't abort on MEM USEs.
+
+2001-11-08  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/compile/20011108-1.c: New test.
+
+--- gcc/reload1.c.jj	Wed Oct 24 21:25:17 2001
++++ gcc/reload1.c	Fri Nov  9 00:24:11 2001
+@@ -2523,6 +2523,12 @@ eliminate_regs (x, mem_mode, insn)
+ 	return x;
+ 
+     case USE:
++      /* Handle insn_list USE that a call to a pure function may generate.  */
++      new = eliminate_regs (XEXP (x, 0), 0, insn);
++      if (new != XEXP (x, 0))
++	return gen_rtx_USE (GET_MODE (x), new);
++      return x;
++
+     case CLOBBER:
+     case ASM_OPERANDS:
+     case SET:
+--- gcc/testsuite/gcc.c-torture/compile/20011108-1.c.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/gcc.c-torture/compile/20011108-1.c	Thu Nov  8 12:39:04 2001
+@@ -0,0 +1,30 @@
++extern __SIZE_TYPE__ strlen (const char *s) __attribute__ ((pure));
++extern void *memcpy (void *__restrict dest, const void *__restrict
++src, __SIZE_TYPE__ n) ;
++void bar(void *, const void *, unsigned long);
++
++typedef struct { unsigned int g; unsigned char **h; } S0;
++typedef struct { S0 *i; unsigned int j; } S1;
++
++void foo(void *x)
++{
++  S1 *a;
++  unsigned int b, c, d;
++
++  for (b = 0; b < a->j; b++)
++    {
++      unsigned char *e;
++
++      e = __builtin_alloca (sizeof (int));
++      memcpy (e, &a->i[b].g, sizeof(int));
++      bar (x, e, sizeof(a->i[b].g));
++      for (c = 0; c < a->i[b].g; c++)
++        {
++          unsigned char *f;
++          d = strlen(a->i[b].h[c]) + 1;
++          f = __builtin_alloca (sizeof(d));
++          memcpy (f, &(d), sizeof(d));
++          bar (x, f, sizeof(d));
++        }
++    }
++}

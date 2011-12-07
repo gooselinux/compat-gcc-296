@@ -1,0 +1,40 @@
+Patch by jfalk@netxpress.de.
+
+--- gcc/aclocal.m4.jj	Wed Jul 12 15:44:03 2000
++++ gcc/aclocal.m4	Mon Nov 12 15:19:16 2001
+@@ -48,8 +48,8 @@ done
+ dnl Automatically generate config.h entries via autoheader.
+ if test x = y ; then
+   patsubst(translit([$1], [a-z], [A-Z]), [\w+],
+-    AC_DEFINE([HAVE_DECL_\&], 1,
+-      [Define to 1 if we found this declaration otherwise define to 0.]))dnl
++    [AC_DEFINE([HAVE_DECL_\&], 1,
++      [Define to 1 if we found this declaration otherwise define to 0.])])dnl
+ fi
+ ])
+ 
+@@ -841,7 +841,6 @@ if test -n "[$]$1"; then
+ [changequote(<<,>>)dnl
+   ac_prog_version=`<<$>>$1 $3 2>&1 |
+                    sed -n 's/^.*patsubst(<<$4>>,/,\/).*$/\1/p'`
+-  echo "configure:__oline__: version of $2 is $ac_prog_version" >&AC_FD_CC
+   case $ac_prog_version in
+     '')     gcc_cv_prog_$2_modern=no;;
+     <<$5>>)
+@@ -849,6 +848,7 @@ if test -n "[$]$1"; then
+     *)      gcc_cv_prog_$2_modern=no;;
+   esac
+ changequote([,])dnl
++  echo "configure:__oline__: version of $2 is $ac_prog_version" >&AC_FD_CC
+ ])
+ else
+   gcc_cv_prog_$2_modern=no
+--- gcc/acconfig.h.jj	Thu Jun  1 11:56:17 2000
++++ gcc/acconfig.h	Mon Nov 12 15:18:17 2001
+@@ -25,3 +25,6 @@
+ 
+ /* Define to `int' if <sys/types.h> doesn't define.  */
+ #undef ssize_t
++
++/* Define if you have the long double datatype */
++#undef HAVE_LONG_DOUBLE

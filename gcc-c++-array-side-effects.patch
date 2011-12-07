@@ -1,0 +1,48 @@
+2001-07-01  Mark Mitchell  <mark@codesourcery.com>
+
+	* expr.c (expand_expr, case ARRAY_REF): Correct check for
+	side-effects in the value of an array element.
+
+2001-06-09  Mark Mitchell  <mark@codesourcery.com>
+
+	* expr.c (expand_expr, case ARRAY_REF): Do not replace
+	an array element with the known initializing value if it has
+	side-effects.
+
+2001-08-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* g++.old-deja/g++.other/sibcall2.C: New test.
+
+--- gcc/expr.c.jj	Thu Aug  9 18:03:51 2001
++++ gcc/expr.c	Fri Aug 17 18:04:25 2001
+@@ -6614,7 +6614,7 @@ expand_expr (exp, target, tmode, modifie
+ 			 elem = TREE_CHAIN (elem))
+ 		      ;
+ 
+-		    if (elem)
++		    if (elem && !TREE_SIDE_EFFECTS (TREE_VALUE (elem)))
+ 		      return expand_expr (fold (TREE_VALUE (elem)), target,
+ 					  tmode, ro_modifier);
+ 		  }
+--- gcc/testsuite/g++.old-deja/g++.other/sibcall2.C.jj	Fri Aug 17 18:09:46 2001
++++ gcc/testsuite/g++.old-deja/g++.other/sibcall2.C	Fri Aug 17 18:09:34 2001
+@@ -0,0 +1,19 @@
++// Build don't link:
++// Special g++ Options: -O2 -foptimize-sibling-calls -fno-exceptions
++
++struct X
++{
++  const char *c() const { return b; };
++  char *b;
++};
++extern "C" int f (const char *);
++struct A
++{
++   X x;
++   void y();
++};
++void A::y()
++{
++  const char *const a[] = { x.c() };
++  f (a[0]);
++}

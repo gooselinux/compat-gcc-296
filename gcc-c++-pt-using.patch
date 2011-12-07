@@ -1,0 +1,98 @@
+2001-05-24  Nathan Sidwell  <nathan@codesourcery.com>
+
+	* g++.old-deja/g++.pt/using1.C: Adjust.
+
+2001-03-01  Nathan Sidwell  <nathan@codesourcery.com>
+
+	PR c++/1981
+	Implement using decls inside template functions.
+	* decl2.c (validate_nonmember_using_decl): Don't special case
+	fake_std_node in the global namespace. Don't reject early when
+	processing a template.
+	(do_local_using_decl): Add to statement tree. Don't do further
+	processing when building a template.
+	* pt.c (tsubst_expr, DECL_STMT case): Deal with USING_DECLs.
+
+	* g++.old-deja/g++.pt/using1.C: New test.
+
+--- gcc/cp/pt.c	2001/02/28 10:44:04	1.523
++++ gcc/cp/pt.c	2001/03/01 14:01:37	1.524
+@@ -7299,6 +7299,14 @@ tsubst_expr (t, args, complain, in_decl)
+ 	decl = DECL_STMT_DECL (t);
+ 	if (TREE_CODE (decl) == LABEL_DECL)
+ 	  finish_label_decl (DECL_NAME (decl));
++	else if (TREE_CODE (decl) == USING_DECL)
++	  {
++	    tree scope = DECL_INITIAL (decl);
++	    tree name = DECL_NAME (decl);
++	    
++	    scope = tsubst_expr (scope, args, complain, in_decl);
++	    do_local_using_decl (build_nt (SCOPE_REF, scope, name));
++	  }
+ 	else
+ 	  {
+ 	    init = DECL_INITIAL (decl);
+--- gcc/cp/decl2.c	2001/03/01 13:50:59	1.444
++++ gcc/cp/decl2.c	2001/03/01 14:01:36	1.445
+@@ -5054,7 +5044,8 @@ validate_nonmember_using_decl (decl, sco
+ 
+ 	 A using-declaration for a class member shall be a
+ 	 member-declaration.  */
+-      if (TREE_CODE (*scope) != NAMESPACE_DECL)
++      if (!processing_template_decl
++          && TREE_CODE (*scope) != NAMESPACE_DECL)
+ 	{
+ 	  if (TYPE_P (*scope))
+ 	    cp_error ("`%T' is not a namespace", *scope);
+@@ -5210,6 +5201,12 @@ do_local_using_decl (decl)
+ 
+   decl = validate_nonmember_using_decl (decl, &scope, &name);
+   if (decl == NULL_TREE)
++    return;
++
++  if (building_stmt_tree ()
++      && at_function_scope_p ())
++    add_decl_stmt (decl);
++  if (processing_template_decl)
+     return;
+ 
+   oldval = lookup_name_current_level (name);
+--- gcc/testsuite/g++.old-deja/g++.pt/using1.C.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/g++.old-deja/g++.pt/using1.C	Fri Jun  8 11:37:35 2001
+@@ -0,0 +1,36 @@
++// Copyright (C) 2001 Free Software Foundation, Inc.
++// Contributed by Nathan Sidwell 26 Feb 2001 <nathan@codesourcery.com>
++
++// Bug 1981. using declarations in namespace scope were not remembered.
++
++namespace A
++{
++  void swap () {}
++};
++
++template <class T> void f()
++{
++  using A::swap;
++}
++
++template void f<float> ();
++
++int foo (int) { return 0;}
++
++namespace B
++{
++  int foo (int) { return 1;}
++  
++  template <class T> int baz ()
++  {
++    using ::foo;
++    
++    return foo (1);
++  }
++  template int baz<float> ();
++};
++
++int main ()
++{
++  return B::baz<float> ();
++}

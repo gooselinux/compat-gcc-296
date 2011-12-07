@@ -1,0 +1,41 @@
+2001-10-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* optimize.c (copy_body_r): Ugly workaround for size_t casting
+	problems.
+
+	* g++.old-deja/g++.other/rh3.C: New test.
+
+--- gcc/cp/optimize.c.jj	Fri Oct 12 16:49:24 2001
++++ gcc/cp/optimize.c	Wed Oct 17 17:58:28 2001
+@@ -359,7 +359,15 @@ copy_body_r (tp, walk_subtrees, data)
+       else if (TREE_CODE (*tp) == CALL_EXPR)
+ 	CALL_EXPR_RTL (*tp) = NULL_RTX;
+       else if (TREE_CODE (*tp) == MODIFY_EXPR
+-	       && TREE_OPERAND (*tp, 0) == TREE_OPERAND (*tp, 1)
++	       && (TREE_OPERAND (*tp, 0) == TREE_OPERAND (*tp, 1)
++		      /* In 2.96-RH, there might be a (size_t) cast
++			 in between too.  */
++		   || (TREE_CODE (TREE_OPERAND (*tp, 1)) == NOP_EXPR
++		       && TREE_OPERAND (*tp, 0)
++			  == TREE_OPERAND (TREE_OPERAND (*tp, 1), 0)
++		       && TYPE_IS_SIZETYPE (TREE_TYPE (TREE_OPERAND (*tp, 1)))
++		       && TYPE_MODE (TREE_TYPE (TREE_OPERAND (*tp, 0)))
++			  == TYPE_MODE (TREE_TYPE (TREE_OPERAND (*tp, 1)))))
+ 	       && nonstatic_local_decl_p (TREE_OPERAND (*tp, 0))
+ 	       && DECL_CONTEXT (TREE_OPERAND (*tp, 0)) == fn)
+ 	{
+--- gcc/testsuite/g++.old-deja/g++.other/rh3.C.jj	Wed Oct 17 17:59:02 2001
++++ gcc/testsuite/g++.old-deja/g++.other/rh3.C	Wed Oct 17 17:59:43 2001
+@@ -0,0 +1,12 @@
++// Build don't link:
++// Special g++ Options: -O3
++
++void foo (unsigned long y)
++{
++  y *= sizeof (char);
++}
++
++void bar (void)
++{
++  foo (1);
++}

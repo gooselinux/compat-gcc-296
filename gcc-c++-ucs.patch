@@ -1,0 +1,33 @@
+2001-05-21  Jakub Jelinek  <jakub@redhat.com>
+
+	* lex.c (is_extended_char_1): error does not support %04x style
+	formats, use sprintf first.
+
+--- gcc/cp/lex.c.jj	Wed May  9 20:56:38 2001
++++ gcc/cp/lex.c	Mon May 21 13:15:26 2001
+@@ -2527,11 +2527,14 @@ static int
+ is_extended_char_1 (c)
+      int c;
+ {
++  static unsigned char buf[9];
++
+   /* None of the valid chars are outside the Basic Multilingual Plane (the
+      low 16 bits).  */
+   if (c > 0xffff)
+     {
+-      error ("universal-character-name `\\U%08x' not valid in identifier", c);
++      sprintf (buf, "%08x", c);
++      error ("universal-character-name `\\U%s' not valid in identifier", buf);
+       return 1;
+     }
+   
+@@ -2777,7 +2780,8 @@ is_extended_char_1 (c)
+       || (c >= 0x4e00 && c <= 0x9fa5))
+     return 1;
+ 
+-  error ("universal-character-name `\\u%04x' not valid in identifier", c);
++  sprintf (buf, "%04x", c);
++  error ("universal-character-name `\\u%s' not valid in identifier", buf);
+   return 1;
+ }
+ 

@@ -1,0 +1,87 @@
+2001-05-10  Jakub Jelinek  <jakub@redhat.com>
+
+	* optimize.c (initialize_inlined_parameters): Fail if less arguments
+	are passed than expected.
+	(expand_call_inline): Cleanup if initialize_inlined_parameters
+	fails.
+
+	* g++.old-deja/g++.other/inline22.C: New test.
+
+--- gcc/cp/optimize.c.jj	Wed May  9 20:56:54 2001
++++ gcc/cp/optimize.c	Fri May 11 13:34:09 2001
+@@ -426,7 +426,17 @@ initialize_inlined_parameters (id, args,
+       tree init_stmt;
+       tree var;
+       tree value;
+-      
++
++      if (a == NULL_TREE)
++	{
++	  pop_srcloc ();
++	  /* If less arguments were passed than actually required,
++	     issue warning and avoid inlining.  */
++	  cp_warning ("too few arguments passed to inline %F, suppressing inlining",
++		      fn);
++	  return error_mark_node;
++	}
++
+       /* Find the initializer.  */
+       value = TREE_VALUE (a);
+       /* If the parameter is never assigned to, we may not need to
+@@ -745,6 +755,14 @@ expand_call_inline (tp, walk_subtrees, d
+ 
+   /* Initialize the parameters.  */
+   arg_inits = initialize_inlined_parameters (id, TREE_OPERAND (t, 1), fn);
++  if (arg_inits == error_mark_node)
++    {
++      /* Clean up.  */
++      splay_tree_delete (id->decl_map);
++      id->decl_map = st;
++      return NULL_TREE;
++    }
++
+   /* Expand any inlined calls in the initializers.  Do this before we
+      push FN on the stack of functions we are inlining; we want to
+      inline calls to FN that appear in the initializers for the
+--- gcc/testsuite/g++.old-deja/g++.other/inline22.C.jj	Wed May  9 20:56:58 2001
++++ gcc/testsuite/g++.old-deja/g++.other/inline22.C	Fri May 11 13:32:50 2001
+@@ -0,0 +1,39 @@
++// Skip if not target: i?86-*-*
++// Build don't link:
++// Special g++ Options: -O
++
++typedef unsigned int u4;
++typedef unsigned long long u8;
++typedef u8 (*u8tou8)(u8);
++
++struct C {
++  static inline u8 a(u4 x, u4 y);
++  static inline u8 b(unsigned char *p) { return c(*(u8 *)p); }
++  static inline u8 c(u8 x) {		// WARNING - too few
++    return ((u8tou8)a)(x);
++  }
++};
++
++inline u8 C::a(u4 x, u4 y) {
++  return x + y;
++}
++
++u8 n = 0x123456789abcdef;
++
++struct B {
++  unsigned char *e;
++  B() { e = (unsigned char *) &n; }
++  u8 f() {
++    return C::b(e);
++  }
++};
++
++struct A {
++  B *g;
++  void foo ();
++};
++
++void A::foo ()
++{
++  g->f();
++}

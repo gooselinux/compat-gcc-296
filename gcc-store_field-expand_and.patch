@@ -1,0 +1,43 @@
+2002-02-20  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/4574
+	* expr.c (store_field): Don't call expand_and on
+	VOIDmode CONST_DOUBLE.
+
+	* gcc.dg/20020220-1.c: New test.
+
+--- gcc/testsuite/gcc.dg/20020220-1.c.jj	Wed Feb 27 17:26:33 2002
++++ gcc/testsuite/gcc.dg/20020220-1.c	Wed Feb 27 17:26:21 2002
+@@ -0,0 +1,19 @@
++/* PR c++/4574
++   This testcase ICEd because expand_and did not handle VOIDmode
++   CONST_DOUBLE arguments.  */
++/* { dg-do compile } */
++/* { dg-options "-w" } */
++
++struct A {
++  unsigned long long b : 8;
++  unsigned long long c : 18;
++};
++
++int main()
++{
++  struct A a;
++  long long l;
++
++  l = a.c = 0x123456789aULL;
++  return 0;
++}
+--- gcc/expr.c.jj	Thu Feb 14 22:42:49 2002
++++ gcc/expr.c	Wed Feb 27 17:27:46 2002
+@@ -4980,7 +4980,9 @@ store_field (target, bitsize, bitpos, mo
+ 	      tree count;
+ 	      enum machine_mode tmode;
+ 
+-	      if (unsignedp)
++	      if (unsignedp
++		  && (GET_MODE (temp) != VOIDmode
++		      || GET_CODE (temp) != CONST_DOUBLE))
+ 		return expand_and (temp, GEN_INT (width_mask), NULL_RTX);
+ 	      tmode = GET_MODE (temp);
+ 	      if (tmode == VOIDmode)

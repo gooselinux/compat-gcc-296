@@ -1,0 +1,69 @@
+2001-02-02  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-decl.c (finish_enum): Revert part of 2000-01-05 change.
+
+	* gcc.dg/20010202-1.c: New test.
+	* gcc.dg/991209-1.c: Compile on whole ia32 family, not just i386.
+
+--- gcc/c-decl.c.jj	Fri Feb  2 00:47:25 2001
++++ gcc/c-decl.c	Fri Feb  2 12:54:36 2001
+@@ -5610,13 +5610,19 @@ finish_enum (enumtype, values, attribute
+   unsign = (tree_int_cst_sgn (minnode) >= 0);
+   precision = MAX (min_precision (minnode, unsign),
+ 		   min_precision (maxnode, unsign));
+-  if (!TYPE_PACKED (enumtype))
+-    precision = MAX (precision, TYPE_PRECISION (integer_type_node));
+-  if (type_for_size (precision, unsign) == 0)
++  if (TYPE_PACKED (enumtype) || precision > TYPE_PRECISION (integer_type_node))
+     {
+-      warning ("enumeration values exceed range of largest integer");
+-      precision = TYPE_PRECISION (long_long_integer_type_node);
++      tree narrowest = type_for_size (precision, unsign);
++      if (narrowest == 0)
++	{
++	  warning ("enumeration values exceed range of largest integer");
++	  narrowest = long_long_integer_type_node;
++	}
++
++      precision = TYPE_PRECISION (narrowest);
+     }
++  else
++    precision = TYPE_PRECISION (integer_type_node);
+ 
+   if (precision == TYPE_PRECISION (integer_type_node))
+     enum_value_type = type_for_size (precision, 0);
+--- gcc/testsuite/gcc.dg/20010202-1.c.jj	Fri Feb  2 12:20:29 2001
++++ gcc/testsuite/gcc.dg/20010202-1.c	Fri Feb  2 12:22:28 2001
+@@ -0,0 +1,24 @@
++/* { dg-do compile { target i?86-*-* sparc*-*-* } } */
++/* { dg-options "-O2" } */
++
++typedef enum { false, true } __attribute__ ((packed)) boolean;
++typedef struct {
++  enum {
++    A0 = 0, A1 = 1, A2 = 2
++  } __attribute__((packed)) A:3;
++  enum {
++    B0 = 0, B1 = 1, B2 = 2
++  } __attribute__((packed)) B:3;
++  boolean C:1;
++  boolean D:1;
++  unsigned char :8;
++} foo;
++foo x = { A2, B1, false, true };
++
++int main(void)
++{
++  if (sizeof (foo) != 2 || __alignof__ (foo) != 1)
++    abort ();
++
++  exit (0);
++}
+--- gcc/testsuite/gcc.dg/991209-1.c.jj	Tue Oct 10 17:34:06 2000
++++ gcc/testsuite/gcc.dg/991209-1.c	Fri Feb  2 12:21:41 2001
+@@ -1,4 +1,4 @@
+-/* { dg-do compile { target i386-*-* } } */
++/* { dg-do compile { target i?86-*-* } } */
+ 
+ int foo ()
+ {

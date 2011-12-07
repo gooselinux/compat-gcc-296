@@ -1,0 +1,215 @@
+2001-05-14  Jakub Jelinek  <jakub@redhat.com>
+
+	* decl2.c (guard_if_stmt, guard_if_stmt_priority,
+	guard_if_stmt_initp, guard_if_stmt_guard): New global variables.
+	(start_static_storage_duration_function): Initialize guard_if_stmt.
+	(finish_static_storage_duration_function): If guard_if_stmt is
+	non-NULL, finish pending if statement.
+	(start_static_initialization_or_destruction): If adjacent
+	initialization/destruction sequences are guarded with identical
+	conditions, put them into the same then clause.
+	(finish_static_initialization_or_destruction): Only finish pending
+	if statement if it had a guard.
+	(do_static_initialization, do_static_destruction): Adjust callers.
+
+--- gcc/cp/decl2.c.jj	Wed May  9 20:56:58 2001
++++ gcc/cp/decl2.c	Wed May 16 18:55:08 2001
+@@ -84,8 +84,8 @@ static void finish_static_storage_durati
+ static priority_info get_priority_info PARAMS ((int));
+ static void do_static_initialization PARAMS ((tree, tree));
+ static void do_static_destruction PARAMS ((tree));
+-static tree start_static_initialization_or_destruction PARAMS ((tree, int));
+-static void finish_static_initialization_or_destruction PARAMS ((tree));
++static void start_static_initialization_or_destruction PARAMS ((tree, int));
++static void finish_static_initialization_or_destruction PARAMS ((void));
+ static void generate_ctor_or_dtor_function PARAMS ((int, int));
+ static int generate_ctor_and_dtor_functions_for_priority
+                                   PARAMS ((splay_tree_node, void *));
+@@ -3103,6 +3103,12 @@ static tree priority_decl;
+ /* The declaration for the static storage duration function.  */
+ static tree ssdf_decl;
+ 
++/* Last open __ssdf if statement.  */
++static tree guard_if_stmt;
++
++/* Last open __ssdf if statement's priority and init value.  */
++static int guard_if_stmt_priority, guard_if_stmt_initp, guard_if_stmt_guard;
++
+ /* All the static storage duration functions created in this
+    translation unit.  */
+ static varray_type ssdf_decls;
+@@ -3214,6 +3220,9 @@ start_static_storage_duration_function (
+   /* Set up the scope of the outermost block in the function.  */
+   body = begin_compound_stmt (/*has_no_scope=*/0);
+ 
++  /* Initialize guard if statement variable.  */
++  guard_if_stmt = NULL_TREE;
++
+   /* This function must not be deferred because we are depending on
+      its compilation to tell us what is TREE_SYMBOL_REFERENCED.  */
+   current_function_cannot_inline 
+@@ -3230,6 +3239,14 @@ static void
+ finish_static_storage_duration_function (body)
+      tree body;
+ {
++  /* Close pending guard if statement (if any). */
++  if (guard_if_stmt)
++    {
++      finish_then_clause (guard_if_stmt);
++      finish_if_stmt ();
++      guard_if_stmt = NULL_TREE;
++    }
++    
+   /* Close out the function.  */
+   finish_compound_stmt (/*has_no_scope=*/0, body);
+   expand_body (finish_function (0));
+@@ -3269,16 +3286,13 @@ get_priority_info (priority)
+    INITP is non-zero, we are initializing the variable.  Otherwise, we
+    are destroying it.  */
+ 
+-static tree
++static void
+ start_static_initialization_or_destruction (decl, initp)
+      tree decl;
+      int initp;
+ {
+-  tree guard_if_stmt = NULL_TREE;
+   int priority;
+-  tree cond;
+-  tree guard;
+-  tree init_cond;
++  tree cond, guard, init_cond;
+   priority_info pi;
+ 
+   /* Figure out the priority for this declaration.  */
+@@ -3318,18 +3332,6 @@ start_static_initialization_or_destructi
+       DECL_CONTEXT (current_function_decl) = DECL_CONTEXT (decl);
+       DECL_STATIC_FUNCTION_P (current_function_decl) = 1;
+     }
+-  
+-  /* Conditionalize this initialization on being in the right priority
+-     and being initializing/finalizing appropriately.  */
+-  guard_if_stmt = begin_if_stmt ();
+-  cond = cp_build_binary_op (EQ_EXPR,
+-			     priority_decl,
+-			     build_int_2 (priority, 0));
+-  init_cond = initp ? integer_one_node : integer_zero_node;
+-  init_cond = cp_build_binary_op (EQ_EXPR,
+-				  initialize_p_decl,
+-				  init_cond);
+-  cond = cp_build_binary_op (TRUTH_ANDIF_EXPR, cond, init_cond);
+ 
+   /* Assume we don't need a guard.  */
+   guard = NULL_TREE;
+@@ -3340,6 +3342,36 @@ start_static_initialization_or_destructi
+   if (TREE_PUBLIC (decl) && (DECL_COMMON (decl) 
+ 			     || DECL_ONE_ONLY (decl)
+ 			     || DECL_WEAK (decl)))
++    guard = get_guard (decl);
++
++  /* If the last initialization/destruction was guarded by identical
++     guard condition, put it into the last then clause instead of
++     creating a new if statement.  */
++  if (guard_if_stmt
++      && ! guard
++      && priority == guard_if_stmt_priority
++      && initp == guard_if_stmt_initp)
++    return;
++
++  if (guard_if_stmt)
++    {
++      finish_then_clause (guard_if_stmt);
++      finish_if_stmt ();
++    }
++
++  /* Conditionalize this initialization on being in the right priority
++     and being initializing/finalizing appropriately.  */
++  guard_if_stmt = begin_if_stmt ();
++  cond = cp_build_binary_op (EQ_EXPR, priority_decl,
++			     build_int_2 (priority, 0));
++  init_cond = initp ? integer_one_node : integer_zero_node;
++  init_cond = cp_build_binary_op (EQ_EXPR, initialize_p_decl, init_cond);
++  cond = cp_build_binary_op (TRUTH_ANDIF_EXPR, cond, init_cond);
++  guard_if_stmt_priority = priority;
++  guard_if_stmt_initp = initp;
++  guard_if_stmt_guard = guard != NULL_TREE;
++
++  if (guard)
+     {
+       tree guard_cond;
+ 
+@@ -3382,8 +3414,6 @@ start_static_initialization_or_destructi
+      do so now.  */
+   if (guard && initp && flag_new_abi)
+     finish_expr_stmt (set_guard (guard));
+-
+-  return guard_if_stmt;
+ }
+ 
+ /* We've just finished generating code to do an initialization or
+@@ -3391,11 +3421,14 @@ start_static_initialization_or_destructi
+    the initialization.  */
+ 
+ static void
+-finish_static_initialization_or_destruction (guard_if_stmt)
+-     tree guard_if_stmt;
++finish_static_initialization_or_destruction ()
+ {
+-  finish_then_clause (guard_if_stmt);
+-  finish_if_stmt ();
++  if (guard_if_stmt_guard)
++    {
++      finish_then_clause (guard_if_stmt);
++      finish_if_stmt ();
++      guard_if_stmt = NULL_TREE;
++    }
+ 
+   /* Now that we're done with DECL we don't need to pretend to be a
+      member of its class any longer.  */
+@@ -3414,12 +3447,9 @@ do_static_initialization (decl, init)
+      tree init;
+ {
+   tree expr;
+-  tree guard_if_stmt;
+ 
+   /* Set up for the initialization.  */
+-  guard_if_stmt
+-    = start_static_initialization_or_destruction (decl,
+-						  /*initp=*/1);
++  start_static_initialization_or_destruction (decl, /*initp=*/1);
+   
+   /* Do the initialization itself.  */
+   if (IS_AGGR_TYPE (TREE_TYPE (decl))
+@@ -3441,8 +3471,8 @@ do_static_initialization (decl, init)
+   if (flag_use_cxa_atexit)
+     register_dtor_fn (decl);
+ 
+-  /* Finsh up.  */
+-  finish_static_initialization_or_destruction (guard_if_stmt);
++  /* Finish up.  */
++  finish_static_initialization_or_destruction ();
+ }
+ 
+ /* Generate code to do the static destruction of DECL.  If DECL may be
+@@ -3454,8 +3484,6 @@ static void
+ do_static_destruction (decl)
+      tree decl;
+ {
+-  tree guard_if_stmt;
+-
+   /* If we're using __cxa_atexit, then destructors are registered
+      immediately after objects are initialized.  */
+   my_friendly_assert (!flag_use_cxa_atexit, 20000121);
+@@ -3465,10 +3493,9 @@ do_static_destruction (decl)
+     return;
+ 
+   /* Actually do the destruction.  */
+-  guard_if_stmt = start_static_initialization_or_destruction (decl,
+-							       /*initp=*/0);
++  start_static_initialization_or_destruction (decl, /*initp=*/0);
+   finish_expr_stmt (build_cleanup (decl));
+-  finish_static_initialization_or_destruction (guard_if_stmt);
++  finish_static_initialization_or_destruction ();
+ }
+ 
+ /* VARS is a list of variables with static storage duration which may

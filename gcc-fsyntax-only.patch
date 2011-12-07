@@ -1,0 +1,472 @@
+2000-08-21  Nix  <nix@esperi.demon.co.uk>
+
+	* gcc.c (do_spec_1): Implement %j spec flag.
+	Remove dead comment.
+
+	* gcc.texi (The Configuration File): Document HOST_BIT_BUCKET.
+	* system.h (HOST_BIT_BUCKET): Default to "/dev/null".
+	* config/i386/xm-dos.h (HOST_BIT_BUCKET): Define as "NUL".
+	* config/i386/xm-os2.h, config/winnt/winnt.h: Likewise.
+
+	* protoize.c (munge_compile_params): Use HOST_BIT_BUCKET (if
+	writable) instead of hardcoded value.
+
+	* toplev.c (compile_file): Output to a file even if -fsyntax-only.
+
+	* gcc.c, config/i386/xm-dos.h, config/i386/xm-os2.h: Kill
+	MKTEMP_EACH_FILE.
+
+	* gcc.c (cc1_options): Do not process -o or run the assembler if
+	-fsyntax-only.
+ch/,cp/,java/
+	* lang-specs.h: Do not process -o or run the assembler if
+	-fsyntax-only.
+f/
+	* lang-specs.h: Do not process -o or run the assembler if
+	-fsyntax-only.  Use %j instead of /dev/null.
+
+--- gcc/gcc.c.jj	Wed May  9 20:56:58 2001
++++ gcc/gcc.c	Tue Jun  5 23:18:42 2001
+@@ -292,6 +292,12 @@ or with constant text in a single argume
+ 	for each `%g.s' and another for each `%U.s'.  Previously, %U was
+ 	simply substituted with a file name chosen for the previous %u,
+ 	without regard to any appended suffix.
++ %jSUFFIX
++	substitutes the name of the HOST_BIT_BUCKET, if any, and if it is
++	writable, and if save-temps is off; otherwise, substitute the name
++	of a temporary file, just like %u.  This temporary file is not
++	meant for communication between processes, but rather as a junk
++	disposal mechanism.
+  %.SUFFIX
+ 	substitutes .SUFFIX for the suffixes of a matched switch's args when
+ 	it is subsequently output with %*. SUFFIX is terminated by the next
+@@ -578,7 +584,8 @@ static const char *cc1_options =
+  %{g*} %{O*} %{W*} %{w} %{pedantic*} %{std*} %{ansi}\
+  %{traditional} %{v:-version} %{pg:-p} %{p} %{f*}\
+  %{aux-info*} %{Qn:-fno-ident} %{--help:--help}\
+- %{S:%W{o*}%{!o*:-o %b.s}}";
++ %{!fsyntax-only:%{S:%W{o*}%{!o*:-o %b.s}}}\
++ %{fsyntax-only:-o %j}";
+ 
+ static const char *asm_options =
+ "%a %Y %{c:%W{o*}%{!o*:-o %w%b%O}}%{!c:-o %d%w%u%O}";
+@@ -698,13 +705,13 @@ static struct compiler default_compilers
+ #if USE_CPPLIB
+      "%{E|M|MM:cpp0 -lang-c %{ansi:-std=c89} %(cpp_options)}\
+       %{!E:%{!M:%{!MM:cc1 -lang-c %{ansi:-std=c89} %(cpp_options)\
+-			  %(cc1_options) %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}"
++			  %(cc1_options) %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}"
+ #else /* ! USE_CPPLIB */
+      "%(trad_capable_cpp) -lang-c %{ansi:-std=c89} %(cpp_options) \
+ 			  %{!M:%{!MM:%{!E:%{!pipe:%g.i} |\n\
+-      cc1 %{!pipe:%g.i} %(cc1_options)  %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}\n"
++      cc1 %{!pipe:%g.i} %(cc1_options) %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"
+ #endif /* ! USE_CPPLIB */
+   },
+   {"-",
+@@ -717,8 +724,8 @@ static struct compiler default_compilers
+   {".i", "@cpp-output"},
+   {"@cpp-output",
+    "%{!M:%{!MM:%{!E:\
+-    cc1 %i %(cc1_options) %{!S:-o %{|!pipe:%g.s} |\n\
+-    as %(asm_options) %{!pipe:%g.s} %A }}}}"},
++    cc1 %i %(cc1_options) %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++    as %(asm_options) %{!pipe:%g.s} %A }}}}}"},
+   {".s", "@assembler"},
+   {"@assembler",
+    "%{!M:%{!MM:%{!E:%{!S:as %(asm_options) %i %A }}}}"},
+@@ -1234,13 +1241,9 @@ static int argbuf_length;
+ 
+ static int argbuf_index;
+ 
+-/* We want this on by default all the time now.  */
+-#define MKTEMP_EACH_FILE
+-
+-#ifdef MKTEMP_EACH_FILE
+-
+-/* This is the list of suffixes and codes (%g/%u/%U) and the associated
+-   temp file.  */
++/* This is the list of suffixes and codes (%g/%u/%U/%j) and the associated
++   temp file.  If the HOST_BIT_BUCKET is used for %j, no entry is made for
++   it here.  */
+ 
+ static struct temp_name {
+   const char *suffix;	/* suffix associated with the code.  */
+@@ -1250,8 +1253,6 @@ static struct temp_name {
+   int filename_length;	/* strlen (filename).  */
+   struct temp_name *next;
+ } *temp_names;
+-#endif
+-
+ 
+ /* Number of commands executed so far.  */
+ 
+@@ -1689,7 +1690,7 @@ read_specs (filename, main_p)
+ 
+ /* This is the common prefix we use to make temp file names.
+    It is chosen once for each run of this program.
+-   It is substituted into a spec by %g.
++   It is substituted into a spec by %g or %j.
+    Thus, all temp file names contain this prefix.
+    In practice, all temp file names start with this prefix.
+ 
+@@ -4019,6 +4020,26 @@ do_spec_1 (spec, inswitch, soft_matched_
+ 	    }
+ 	    break;
+ 
++          case 'j':
++            {
++              struct stat st;
++
++              /* If save_temps_flag is off, and the HOST_BIT_BUCKET is defined,
++                 and it is not a directory, and it is writable, use it.
++                 Otherwise, fall through and treat this like any other
++                 temporary file. */
++
++              if ((!save_temps_flag)
++                  && (stat (HOST_BIT_BUCKET, &st) == 0) && (!S_ISDIR (st.st_mode))
++                  && (access (HOST_BIT_BUCKET, W_OK) == 0))
++                {
++                  obstack_grow (&obstack, HOST_BIT_BUCKET,
++                                strlen (HOST_BIT_BUCKET));
++                  delete_this_arg = 0;
++                  arg_going = 1;
++                  break;
++                }
++            }
+ 	  case 'g':
+ 	  case 'u':
+ 	  case 'U':
+@@ -4029,11 +4050,6 @@ do_spec_1 (spec, inswitch, soft_matched_
+ 	      }
+ 	    else
+ 	      {
+-#ifdef MKTEMP_EACH_FILE
+-		/* ??? This has a problem: the total number of
+-		   values mktemp can return is limited.
+-		   That matters for the names of object files.
+-		   In 2.4, do something about that.  */
+ 		struct temp_name *t;
+ 		int suffix_length;
+ 		const char *suffix = p;
+@@ -4070,8 +4086,8 @@ do_spec_1 (spec, inswitch, soft_matched_
+ 		      && t->unique == (c != 'g'))
+ 		    break;
+ 
+-		/* Make a new association if needed.  %u requires one.  */
+-		if (t == 0 || c == 'u')
++		/* Make a new association if needed.  %u and %j require one.  */
++		if (t == 0 || c == 'u' || c == 'j')
+ 		  {
+ 		    if (t == 0)
+ 		      {
+@@ -4093,19 +4109,6 @@ do_spec_1 (spec, inswitch, soft_matched_
+ 
+ 		obstack_grow (&obstack, t->filename, t->filename_length);
+ 		delete_this_arg = 1;
+-#else
+-		obstack_grow (&obstack, temp_filename, temp_filename_length);
+-		if (c == 'u' || c == 'U')
+-		  {
+-		    static int unique;
+-		    char buff[9];
+-		    if (c == 'u')
+-		      unique++;
+-		    sprintf (buff, "%d", unique);
+-		    obstack_grow (&obstack, buff, strlen (buff));
+-		  }
+-#endif
+-		delete_this_arg = 1;
+ 	      }
+ 	    arg_going = 1;
+ 	    break;
+@@ -5271,13 +5274,6 @@ main (argc, argv)
+ #ifdef INIT_ENVIRONMENT
+   /* Set up any other necessary machine specific environment variables.  */
+   putenv (INIT_ENVIRONMENT);
+-#endif
+-
+-  /* Choose directory for temp files.  */
+-
+-#ifndef MKTEMP_EACH_FILE
+-  temp_filename = choose_temp_base ();
+-  temp_filename_length = strlen (temp_filename);
+ #endif
+ 
+   /* Make a table of what switches there are (switches, n_switches).
+--- gcc/gcc.texi.jj	Wed Jul 12 15:44:04 2000
++++ gcc/gcc.texi	Tue Jun  5 23:13:08 2001
+@@ -3928,6 +3928,15 @@ Define this macro to be a C string repre
+ files on your machine.  If you do not define this macro, GCC will use
+ the null string as the suffix for object files.
+ 
++@findex HOST_BIT_BUCKET
++@item HOST_BIT_BUCKET
++The name of a file or file-like object on the host system which acts as
++a ``bit bucket''.  If you do not define this macro, GCC will use
++@samp{/dev/null} as the bit bucket.  If the target does not support a
++bit bucket, this should be defined to the null string, or some other
++illegal filename.  If the bit bucket is not writable, GCC will use a
++temporary file instead.
++
+ @findex COLLECT_EXPORT_LIST
+ @item COLLECT_EXPORT_LIST
+ If defined, @code{collect2} will scan the individual object files
+--- gcc/protoize.c.jj	Tue Apr 25 21:02:55 2000
++++ gcc/protoize.c	Tue Jun  5 23:13:08 2001
+@@ -1952,6 +1952,7 @@ munge_compile_params (params_list)
+     = (const char **) alloca ((strlen (params_list) + 8) * sizeof (char *));
+   int param_count = 0;
+   const char *param;
++  struct stat st;
+ 
+   temp_params[param_count++] = compiler_file_name;
+   for (;;)
+@@ -1998,11 +1999,15 @@ munge_compile_params (params_list)
+ 
+   temp_params[param_count++] = "-S";
+   temp_params[param_count++] = "-o";
+-#if defined (_WIN32) && ! defined (__CYGWIN__) && ! defined (_UWIN)
+-  temp_params[param_count++] = "NUL";
+-#else
+-  temp_params[param_count++] = "/dev/null";
+-#endif
++  
++  if ((stat (HOST_BIT_BUCKET, &st) == 0) && (!S_ISDIR (st.st_mode))
++      && (access (HOST_BIT_BUCKET, W_OK) == 0))
++    temp_params[param_count++] = HOST_BIT_BUCKET;
++  else
++    /* FIXME: This is hardly likely to be right, if HOST_BIT_BUCKET is not
++       writable.  But until this is rejigged to use make_temp_file(), this
++       is the best we can do.  */
++    temp_params[param_count++] = "/dev/null";
+ 
+   /* Leave room for the input file name argument.  */
+   input_file_name_index = param_count;
+--- gcc/system.h.jj	Wed May  9 20:56:59 2001
++++ gcc/system.h	Tue Jun  5 23:13:08 2001
+@@ -600,6 +600,13 @@ extern void abort PARAMS ((void));
+ #define ONLY_INT_FIELDS 0
+ #endif 
+ 
++/* Provide a default for the HOST_BIT_BUCKET.
++   This suffices for POSIX-like hosts.  */
++
++#ifndef HOST_BIT_BUCKET
++#define HOST_BIT_BUCKET "/dev/null"
++#endif
++
+ /* Enumerated bitfields are safe to use unless we've been explictly told
+    otherwise or if they are signed. */
+  
+--- gcc/toplev.c.jj	Wed May  9 20:56:52 2001
++++ gcc/toplev.c	Tue Jun  5 23:13:08 2001
+@@ -2134,38 +2134,35 @@ compile_file (name)
+ 	pfatal_with_name (aux_info_file_name);
+     }
+ 
+-  /* Open assembler code output file.  */
++  /* Open assembler code output file.  Do this even if -fsyntax-only is on,
++     because then the driver will have provided the name of a temporary
++     file or bit bucket for us.  */
+ 
+-  if (flag_syntax_only)
+-    asm_out_file = NULL;
++  if (! name_specified && asm_file_name == 0)
++    asm_out_file = stdout;
+   else
+     {
+-      if (! name_specified && asm_file_name == 0)
+-	asm_out_file = stdout;
++      if (asm_file_name == 0)
++        {
++          int len = strlen (dump_base_name);
++          char *dumpname = (char *) xmalloc (len + 6);
++          memcpy (dumpname, dump_base_name, len + 1);
++          strip_off_ending (dumpname, len);
++          strcat (dumpname, ".s");
++          asm_file_name = dumpname;
++        }
++      if (!strcmp (asm_file_name, "-"))
++        asm_out_file = stdout;
+       else
+-	{
+-	  if (asm_file_name == 0)
+-	    {
+-	      int len = strlen (dump_base_name);
+-	      char *dumpname = (char *) xmalloc (len + 6);
+-	      memcpy (dumpname, dump_base_name, len + 1);
+-	      strip_off_ending (dumpname, len);
+-	      strcat (dumpname, ".s");
+-	      asm_file_name = dumpname;
+-	    }
+-	  if (!strcmp (asm_file_name, "-"))
+-	    asm_out_file = stdout;
+-	  else
+-	    asm_out_file = fopen (asm_file_name, "w");
+-	  if (asm_out_file == 0)
+-	    pfatal_with_name (asm_file_name);
+-	}
++        asm_out_file = fopen (asm_file_name, "w");
++      if (asm_out_file == 0)
++        pfatal_with_name (asm_file_name);
++    }
+ 
+ #ifdef IO_BUFFER_SIZE
+-      setvbuf (asm_out_file, (char *) xmalloc (IO_BUFFER_SIZE),
+-	       _IOFBF, IO_BUFFER_SIZE);
++  setvbuf (asm_out_file, (char *) xmalloc (IO_BUFFER_SIZE),
++           _IOFBF, IO_BUFFER_SIZE);
+ #endif
+-    }
+ 
+   if (ggc_p && name != 0)
+     name = ggc_alloc_string (name, strlen (name));
+@@ -2434,8 +2431,7 @@ compile_file (name)
+ 
+   finish_parse ();
+ 
+-  if (! flag_syntax_only
+-      && (ferror (asm_out_file) != 0 || fclose (asm_out_file) != 0))
++  if (ferror (asm_out_file) != 0 || fclose (asm_out_file) != 0)
+     fatal_io_error (asm_file_name);
+ 
+   /* Do whatever is necessary to finish printing the graphs.  */
+--- gcc/ch/lang-specs.h.jj	Wed May  9 20:56:14 2001
++++ gcc/ch/lang-specs.h	Tue Jun  5 23:13:08 2001
+@@ -26,5 +26,6 @@ Boston, MA 02111-1307, USA.  */
+   {"@chill",
+      "tradcpp0 -lang-chill %{!no-gcc:-D__GNUCHILL__=%v1} %(cpp_options)\
+ 	      %{!M:%{!MM:%{!E:%{!pipe:%g.i} |\n\
+-      cc1chill %{!pipe:%g.i} %(cc1_options) %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}\n"},
++      cc1chill %{!pipe:%g.i} %(cc1_options)\
++      %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"},
+--- gcc/cp/lang-specs.h.jj	Wed May  9 20:56:54 2001
++++ gcc/cp/lang-specs.h	Tue Jun  5 23:16:33 2001
+@@ -39,20 +39,22 @@ Boston, MA 02111-1307, USA.  */
+        %{fnew-abi:-D__GXX_ABI_VERSION=100}\
+        %{ansi:-trigraphs -$ -D__STRICT_ANSI__}\
+        %(cpp_options) %(cc1_options) %{+e*}\
+-       %{!S:-o %{|!pipe:%g.s} |\n\
+-     as %(asm_options) %{!pipe:%g.s} %A }}}}"
++       %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++     as %(asm_options) %{!pipe:%g.s} %A }}}}}"
+ #else /* ! USE_CPPLIB */
+     "cpp0 -lang-c++ %{!no-gcc:-D__GNUG__=%v1}\
+        %{!fno-exceptions:-D__EXCEPTIONS}\
+        %{fnew-abi:-D__GXX_ABI_VERSION=100}\
+        %{ansi:-trigraphs -$ -D__STRICT_ANSI__} %(cpp_options)\
+        %{!M:%{!MM:%{!E:%{!pipe:%g.ii} |\n\
+-     cc1plus %{!pipe:%g.ii} %(cc1_options) %{+e*} %{!S:-o %{|!pipe:%g.s} |\n\
+-     as %(asm_options) %{!pipe:%g.s} %A }}}}\n"
++     cc1plus %{!pipe:%g.ii} %(cc1_options) %{+e*}\
++     %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++     as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"
+ #endif /* ! USE_CPPLIB */
+   },
+   {".ii", "@c++-cpp-output"},
+   {"@c++-cpp-output",
+    "%{!M:%{!MM:%{!E:\
+     cc1plus -fpreprocessed %i %(cc1_options) %{+e*}\
+-    %{!S:-o %{|!pipe:%g.s} |\n as %(asm_options) %{!pipe:%g.s} %A }}}}"},
++    %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++    as %(asm_options) %{!pipe:%g.s} %A }}}}}"},
+--- gcc/f/lang-specs.h.jj	Wed May  9 20:56:20 2001
++++ gcc/f/lang-specs.h	Tue Jun  5 23:13:08 2001
+@@ -29,27 +29,27 @@ the Free Software Foundation, 59 Temple 
+   {".FPP", "@f77-cpp-input"},
+   {"@f77-cpp-input",
+    "tradcpp0 -lang-fortran %(cpp_options) %{!M:%{!MM:%{!E:%{!pipe:%g.f |\n\
+-    f771 %{!pipe:%g.f} %(cc1_options) %{I*} %{!S:-o %{|!pipe:%g.s} |\n\
+-    as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"},
++    f771 %{!pipe:%g.f} %(cc1_options) %{I*} %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++    as %(asm_options) %{!pipe:%g.s} %A }}}}}}\n"},
+   {".r", "@ratfor"},
+   {"@ratfor",
+    "%{C:%{!E:%eGNU C does not support -C without using -E}}\
+     ratfor %{C} %{v} %i %{E:%W{o*}} %{!E: %{!pipe:-o %g.f} |\n\
+-    f771 %{!pipe:%g.f} %(cc1_options) %{I*} %{!S:-o %{|!pipe:%g.s} |\n\
+-    as %(asm_options) %{!pipe:%g.s} %A }}\n"},
++    f771 %{!pipe:%g.f} %(cc1_options) %{I*} %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++    as %(asm_options) %{!pipe:%g.s} %A }}}\n"},
+   {".f",   "@f77"},
+   {".for", "@f77"},
+   {".FOR", "@f77"},
+   {"@f77",
+-   "%{!M:%{!MM:%{!E:f771 %i %(cc1_options) %{I*} %{!S:-o %{|!pipe:%g.s} |\n\
+-     as %(asm_options) %{!pipe:%g.s} %A }}}}\n"},
++   "%{!M:%{!MM:%{!E:f771 %i %(cc1_options) %{I*} %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++     as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"},
+   /* XXX This is perverse and should not be necessary.  */
+   {"@f77-version",
+-   "tradcpp0 -lang-fortran %(cpp_options) /dev/null \n\
++   "tradcpp0 -lang-fortran %(cpp_options) %j \n\
+     f771 -fnull-version %1 \
+       %{!Q:-quiet} -dumpbase g77-version.f %{d*} %{m*} %{a*} \
+       %{g*} %{O*} %{W*} %{w} %{pedantic*} \
+-      -version -fversion %{f*} %{I*} -o %g.s /dev/null \n\
++      -version -fversion %{f*} %{I*} -o %g.s %j \n\
+      as %a %Y -o %g%O %g.s %A \n\
+      ld %l %X -o %g %g%O %{A} %{d} %{e*} %{m} %{N} %{n} \
+       %{r} %{s} %{t} %{u*} %{x} %{z} %{Z} \
+--- gcc/config/i386/xm-dos.h.jj	Sat Apr 10 06:27:12 1999
++++ gcc/config/i386/xm-dos.h	Tue Jun  5 23:13:08 2001
+@@ -33,6 +33,8 @@ Boston, MA 02111-1307, USA.  */
+ /* Suffix for executable file names.  */
+ #define EXECUTABLE_SUFFIX ".exe"
+ 
+-#define MKTEMP_EACH_FILE 1
++/* Tell GCC about DOS's bit bucket. */
++
++#define HOST_BIT_BUCKET "NUL"
+ 
+ #define NO_PRECOMPILES 1
+--- gcc/config/i386/xm-os2.h.jj	Tue Apr 25 21:02:59 2000
++++ gcc/config/i386/xm-os2.h	Tue Jun  5 23:13:08 2001
+@@ -67,8 +67,8 @@ int spawnvp (int modeflag, char *path, c
+ #define OBJECT_SUFFIX ".obj"
+ #endif
+ 
+-/* This is required to make temporary file names unique on file
+-   systems which severely restrict the length of file names. */
+-#define MKTEMP_EACH_FILE
++/* Tell GCC about OS/2's bit bucket. */
++
++#define HOST_BIT_BUCKET "NUL"
+ 
+ #include "i386/xm-i386.h"
+--- gcc/objc/lang-specs.h.jj	Wed May  9 20:56:14 2001
++++ gcc/objc/lang-specs.h	Tue Jun  5 23:13:18 2001
+@@ -25,19 +25,19 @@ Boston, MA 02111-1307, USA.  */
+   {"@objective-c",
+ #if USE_CPPLIB
+      "%{E|M|MM:cpp0 -lang-objc %{ansi:-std=c89} %(cpp_options)}\
+-      %{!E:%{!M:%{!MM:cc1obj -lang-objc %(cpp_options) %(cc1_options)\
+-			     %{gen-decls} %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}"
++      %{!E:%{!M:%{!MM:cc1obj -lang-objc %(cpp_options) %(cc1_options) %{gen-decls}\
++             %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}"
+ #else /* ! USE_CPPLIB */
+      "%(trad_capable_cpp) -lang-objc %{ansi:-std=c89} %(cpp_options)\
+ 			  %{!M:%{!MM:%{!E:%{!pipe:%g.mi} |\n\
+       cc1obj -lang-objc %{!pipe:%g.mi} %(cc1_options) %{gen-decls}\
+-	     %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}\n"
++	     %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}\n"
+ #endif /* ! USE_CPPLIB */
+     },
+   {".mi", "@objc-cpp-output"},
+   {"@objc-cpp-output",
+      "%{!M:%{!MM:%{!E:cc1obj -lang-objc %i %(cc1_options) %{gen-decls}\
+-			     %{!S:-o %{|!pipe:%g.s} |\n\
+-      as %(asm_options) %{!pipe:%g.s} %A }}}}"},
++			     %{!fsyntax-only:%{!S:-o %{|!pipe:%g.s} |\n\
++      as %(asm_options) %{!pipe:%g.s} %A }}}}}"},

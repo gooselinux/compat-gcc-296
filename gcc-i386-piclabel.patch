@@ -1,0 +1,98 @@
+2002-03-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.c (asm_output_function_prefix): Put pic_label
+	into .text section.
+
+	* g++.old-deja/g++.other/piclabel1.C: New test.
+	* g++.old-deja/g++.other/piclabel1-aux1.cc: Auxiliary file.
+	* g++.old-deja/g++.other/piclabel1-aux2.cc: Auxiliary file.
+
+--- gcc/config/i386/i386.c.jj	Wed Mar 13 22:53:39 2002
++++ gcc/config/i386/i386.c	Tue Mar 26 12:41:08 2002
+@@ -1713,12 +1713,19 @@ asm_output_function_prefix (file, name)
+   	     me debug info for a label that you're declaring non-global?) this
+ 	     was changed to call ASM_OUTPUT_LABEL() instead. */
+ 
++#ifdef HAVE_GAS_SUBSECTION_ORDERING
++	  if (! in_text_section ())
++	    fprintf (asm_out_file, "\t%s\n", TEXT_SECTION_ASM_OP);
++#endif
+ 	  ASM_OUTPUT_LABEL (file, pic_label_name); 
+ 
+ 	  xops[1] = gen_rtx_MEM (SImode, xops[1]);
+ 	  output_asm_insn ("mov{l}\t{%1, %0|%0, %1}", xops);
+ 	  output_asm_insn ("ret", xops);
+-
++#ifdef HAVE_GAS_SUBSECTION_ORDERING
++	  if (! in_text_section ())
++	    fprintf (asm_out_file, "\t.previous\n");
++#endif
+ 	  pic_label_output = 1;
+ 	}
+     }
+--- gcc/testsuite/g++.old-deja/g++.other/piclabel1.C.jj	Tue Mar 26 12:14:38 2002
++++ gcc/testsuite/g++.old-deja/g++.other/piclabel1.C	Tue Mar 26 12:14:32 2002
+@@ -0,0 +1,25 @@
++// Skip if not target: i?86-*-*
++// Special g++ Options: -mcpu=i686 -O2 -fpic
++
++// Additional sources: piclabel1-aux1.cc piclabel1-aux2.cc
++
++typedef int (*fn) ();
++extern fn x[], y[];
++int foovar, barvar;
++extern "C" void abort (void);
++extern "C" void exit (int);
++
++int main ()
++{
++  foovar = 17;
++  barvar = 31;
++  if ((x[0])() != foovar + 26)
++    abort ();
++  if ((x[1])() != foovar - 16)
++    abort ();
++  if ((y[0])() != foovar + 26)
++    abort ();
++  if ((y[1])() != barvar + 30)
++    abort ();
++  exit (0);
++}
+--- gcc/testsuite/g++.old-deja/g++.other/piclabel1-aux1.cc.jj	Tue Mar 26 12:14:41 2002
++++ gcc/testsuite/g++.old-deja/g++.other/piclabel1-aux1.cc	Tue Mar 26 12:02:10 2002
+@@ -0,0 +1,16 @@
++typedef int (*fn) ();
++extern int foovar, barvar;
++
++inline int
++foo ()
++{
++  return foovar + 26;
++}
++
++int
++baz ()
++{
++  return barvar + 30;
++}
++
++fn y[2] = { foo, baz };
+--- gcc/testsuite/g++.old-deja/g++.other/piclabel1-aux2.cc.jj	Tue Mar 26 12:14:45 2002
++++ gcc/testsuite/g++.old-deja/g++.other/piclabel1-aux2.cc	Tue Mar 26 12:02:16 2002
+@@ -0,0 +1,16 @@
++typedef int (*fn) ();
++extern int foovar;
++
++inline int
++foo ()
++{
++  return foovar + 26;
++}
++
++inline int
++bar ()
++{
++  return foovar - 16;
++}
++
++fn x[2] = { foo, bar };

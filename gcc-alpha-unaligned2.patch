@@ -1,0 +1,87 @@
+2000-12-29  Richard Henderson  <rth@redhat.com>
+
+	* config/alpha/alpha.c (alpha_expand_block_move): Set src_align
+	from an ADDRESSOF.  Set dst_align in bits not bytes.
+	(alpha_expand_block_clear): Initialize align in bits not bytes.
+	Fix typo in aligned word write test.
+
+*** gcc/config/alpha/alpha.c	2000/12/14 08:18:57	1.151
+--- gcc/config/alpha/alpha.c	2000/12/29 05:30:51
+*************** alpha_expand_block_move (operands)
+*** 2920,2925 ****
+--- 2920,2926 ----
+        /* No appropriate mode; fall back on memory.  */
+        orig_src = change_address (orig_src, GET_MODE (orig_src),
+  				 copy_addr_to_reg (XEXP (orig_src, 0)));
++       src_align = GET_MODE_BITSIZE (GET_MODE (XEXP (tmp, 0)));
+      }
+  
+    ofs = 0;
+*************** alpha_expand_block_move (operands)
+*** 3082,3088 ****
+  	 up by recognizing extra alignment information.  */
+        orig_dst = change_address (orig_dst, GET_MODE (orig_dst),
+  				 copy_addr_to_reg (XEXP (orig_dst, 0)));
+!       dst_align = GET_MODE_SIZE (GET_MODE (tmp));
+      }
+  
+    /* Write out the data in whatever chunks reading the source allowed.  */
+--- 3083,3089 ----
+  	 up by recognizing extra alignment information.  */
+        orig_dst = change_address (orig_dst, GET_MODE (orig_dst),
+  				 copy_addr_to_reg (XEXP (orig_dst, 0)));
+!       dst_align = GET_MODE_BITSIZE (GET_MODE (XEXP (tmp, 0)));
+      }
+  
+    /* Write out the data in whatever chunks reading the source allowed.  */
+*************** alpha_expand_block_clear (operands)
+*** 3203,3209 ****
+    rtx align_rtx = operands[2];
+    HOST_WIDE_INT orig_bytes = INTVAL (bytes_rtx);
+    unsigned HOST_WIDE_INT bytes = orig_bytes;
+!   unsigned HOST_WIDE_INT align = INTVAL (align_rtx);
+    rtx orig_dst = operands[0];
+    rtx tmp;
+    unsigned HOST_WIDE_INT i, words, ofs = 0;
+--- 3204,3210 ----
+    rtx align_rtx = operands[2];
+    HOST_WIDE_INT orig_bytes = INTVAL (bytes_rtx);
+    unsigned HOST_WIDE_INT bytes = orig_bytes;
+!   unsigned HOST_WIDE_INT align = INTVAL (align_rtx) * BITS_PER_UNIT;
+    rtx orig_dst = operands[0];
+    rtx tmp;
+    unsigned HOST_WIDE_INT i, words, ofs = 0;
+*************** alpha_expand_block_clear (operands)
+*** 3249,3255 ****
+        /* No appropriate mode; fall back on memory.  */
+        orig_dst = change_address (orig_dst, GET_MODE (orig_dst),
+  				 copy_addr_to_reg (tmp));
+!       align = GET_MODE_SIZE (GET_MODE (XEXP (tmp, 0)));
+      }
+  
+    /* Handle a block of contiguous words first.  */
+--- 3250,3256 ----
+        /* No appropriate mode; fall back on memory.  */
+        orig_dst = change_address (orig_dst, GET_MODE (orig_dst),
+  				 copy_addr_to_reg (tmp));
+!       align = GET_MODE_BITSIZE (GET_MODE (XEXP (tmp, 0)));
+      }
+  
+    /* Handle a block of contiguous words first.  */
+*************** alpha_expand_block_clear (operands)
+*** 3268,3274 ****
+        ofs += words * 8;
+      }
+  
+!   if (align >= 16 && bytes >= 4)
+      {
+        words = bytes / 4;
+  
+--- 3269,3275 ----
+        ofs += words * 8;
+      }
+  
+!   if (align >= 32 && bytes >= 4)
+      {
+        words = bytes / 4;
+  

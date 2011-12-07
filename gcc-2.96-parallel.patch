@@ -1,0 +1,69 @@
+2002-04-05  H.J. Lu  (hjl@gnu.org)
+
+	* Makefile.in (stmp-string): Depend on
+	stamp-picdir.
+	(bigstmp-string): Likewise.
+	(stmp-complx): Likewise.
+	(bigstmp-complx): Likewise.
+
+2001-07-08  H.J. Lu  (hjl@gnu.org)
+
+	* Make-lang.in (java): Support parallel build.
+
+--- gcc/java/Make-lang.in.parallel	Fri Apr  5 10:16:21 2002
++++ gcc/java/Make-lang.in	Fri Apr  5 10:16:21 2002
+@@ -56,8 +56,14 @@ JAVA_CROSS_NAME = `t='$(program_transfor
+ #
+ GCJ = gcj
+ 
+-# Define the names for selecting java in LANGUAGES.
+-java: jc1$(exeext) $(GCJ)$(exeext) jvgenmain$(exeext) gcjh$(exeext) jv-scan$(exeext) jcf-dump$(exeext)
++# Define the names for selecting java in LANGUAGES. We cannot do
++# paralllel build with more tha one "cd java && make ..." at the
++# same time.
++java: jcf-dump$(exeext)
++jvgenmain$(exeext): jc1$(exeext) $(GCJ)$(exeext)
++gcjh$(exeext): jvgenmain$(exeext)
++jv-scan$(exeext): gcjh$(exeext)
++jcf-dump$(exeext): jv-scan$(exeext)
+ 
+ # Define the name of target independant tools to be installed in $(bindir)
+ # Names are subject to changes
+--- libstdc++/Makefile.in.parallel	Sun Jul  2 01:37:33 2000
++++ libstdc++/Makefile.in	Fri Apr  5 11:12:33 2002
+@@ -139,7 +139,7 @@ stlinst.o: stlinst.cc
+ valarray.o: valarray.cc
+ 
+ # Later do wide strings, too.
+-stmp-string: ${srcdir}/sinst.cc ${srcdir}/std/bastring.h \
++stmp-string: stamp-picdir ${srcdir}/sinst.cc ${srcdir}/std/bastring.h \
+ 	     ${srcdir}/std/bastring.cc ${srcdir}/std/straits.h
+ 	for name in $(STRFUNCS) $(STRIO); do \
+ 	  echo c$${name}; \
+@@ -153,7 +153,7 @@ stmp-string: ${srcdir}/sinst.cc ${srcdir
+ 	done
+ 	touch stmp-string
+ 
+-bigstmp-string: ${srcdir}/sinst.cc ${srcdir}/std/bastring.h \
++bigstmp-string: stamp-picdir ${srcdir}/sinst.cc ${srcdir}/std/bastring.h \
+ 	        ${srcdir}/std/bastring.cc ${srcdir}/std/straits.h
+ 	echo cstring
+ 	if [ x"$(PICFLAG)" != x ]; then \
+@@ -178,7 +178,7 @@ COMFUNCS = MAIN ADDCC ADDCF ADDFC SUBCC 
+ 	   CONJ NORM COS COSH EXP LOG POWCC POWCF POWCI POWFC SIN SINH SQRT
+ COMIO    = EXTRACT INSERT
+ 
+-stmp-complx: ${srcdir}/cinst.cc ${srcdir}/std/complext.h \
++stmp-complx: stamp-picdir ${srcdir}/cinst.cc ${srcdir}/std/complext.h \
+ 	      ${srcdir}/std/complext.cc ${srcdir}/std/dcomplex.h \
+ 	      ${srcdir}/std/ldcomplex.h
+ 	for N in $(COMFUNCS) $(COMIO); do \
+@@ -209,7 +209,7 @@ stmp-complx: ${srcdir}/cinst.cc ${srcdir
+ 	done
+ 	touch stmp-complx
+ 
+-bigstmp-complx: ${srcdir}/cinst.cc ${srcdir}/std/complext.h \
++bigstmp-complx: stamp-picdir ${srcdir}/cinst.cc ${srcdir}/std/complext.h \
+ 	         ${srcdir}/std/complext.cc ${srcdir}/std/dcomplex.h \
+ 	         ${srcdir}/std/ldcomplex.h
+ 	echo fcomplex

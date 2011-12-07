@@ -1,0 +1,32 @@
+2001-04-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c (give_switch): If argument contains no dots, append
+	suffix anyway.  If it does not contain even a dir separator,
+	don't store dot before start of string.
+
+--- gcc/gcc.c.jj	Fri Apr 20 00:57:40 2001
++++ gcc/gcc.c	Thu Apr 26 13:18:02 2001
+@@ -5267,7 +5267,7 @@ give_switch (switchnum, omit_first_word,
+ 	    do_spec_1 (" ", 0, NULL_PTR);
+ 	  if (suffix_subst)
+ 	    {
+-	      unsigned length = strlen (arg);
++	      int length = strlen (arg);
+ 
+ 	      while (length-- && !IS_DIR_SEPARATOR (arg[length]))
+ 		if (arg[length] == '.')
+@@ -5276,11 +5276,9 @@ give_switch (switchnum, omit_first_word,
+ 		    break;
+ 		  }
+ 	      do_spec_1 (arg, 1, NULL_PTR);
+-	      if (!arg[length])
+-		{
+-		  ((char *)arg)[length] = '.';
+-		  do_spec_1 (suffix_subst, 1, NULL_PTR);
+-		}
++	      if (length >= 0 && !arg[length])
++		((char *)arg)[length] = '.';
++	      do_spec_1 (suffix_subst, 1, NULL_PTR);
+ 	    }
+ 	  else
+ 	    do_spec_1 (arg, 1, NULL_PTR);

@@ -1,0 +1,36 @@
+2000-11-29  Jakub Jelinek  <jakub@redhat.com>
+
+	* unroll.c (loop_iterations): If we cannot prove iteration variable
+	is set once in each iteration, punt.
+
+--- gcc/unroll.c.jj	Sun Nov 12 22:32:51 2000
++++ gcc/unroll.c	Wed Nov 29 19:42:33 2000
+@@ -2488,6 +2488,13 @@ iteration_info (loop, iteration_var, ini
+       /* Grab initial value, only useful if it is a constant.  */
+       bl = reg_biv_class[REGNO (iteration_var)];
+       *initial_value = bl->initial_value;
++      if (!bl->biv->always_executed || bl->biv->maybe_multiple)
++	{
++	  if (loop_dump_stream)
++	    fprintf (loop_dump_stream,
++		     "Loop iterations: Basic induction var not set once in each iteration.\n");
++	  return 0;
++	}
+ 
+       *increment = biv_total_increment (bl);
+     }
+@@ -2498,6 +2505,14 @@ iteration_info (loop, iteration_var, ini
+ 
+       if (REGNO (v->src_reg) >= max_reg_before_loop)
+ 	abort ();
++
++      if (!v->always_executed || v->maybe_multiple)
++	{
++	  if (loop_dump_stream)
++	    fprintf (loop_dump_stream,
++		     "Loop iterations: General induction var not set once in each iteration.\n");
++	  return 0;
++	}
+ 
+       bl = reg_biv_class[REGNO (v->src_reg)];
+ 

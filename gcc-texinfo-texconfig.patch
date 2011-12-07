@@ -1,0 +1,27 @@
+2001-07-11  Jakub Jelinek  <jakub@redhat.com>
+
+	* configure.in (TEXMF): Don't run texconfig.
+	* configure: Rebuilt.
+
+--- texinfo/configure.in.jj	Sun Apr 12 22:00:34 1998
++++ texinfo/configure.in	Wed Jul 11 01:55:16 2001
+@@ -16,7 +16,7 @@ AC_PROG_RANLIB
+ # We do this for the sake of a more helpful warning in doc/Makefile.
+ TEXMF='$(datadir)/texmf'
+ AC_CHECK_PROG(TEXCONFIG, texconfig, true, false)
+-$TEXCONFIG && eval `texconfig conf </dev/null | grep '^TEXMF='`
++# $TEXCONFIG && eval `texconfig conf </dev/null | grep '^TEXMF='`
+ AC_SUBST(TEXMF)
+ 
+ AC_ISC_POSIX
+--- texinfo/configure.jj	Sun Apr 12 22:00:33 1998
++++ texinfo/configure	Wed Jul 11 01:57:04 2001
+@@ -1183,7 +1183,7 @@ else
+   echo "$ac_t""no" 1>&6
+ fi
+ 
+-$TEXCONFIG && eval `texconfig conf </dev/null | grep '^TEXMF='`
++# $TEXCONFIG && eval `texconfig conf </dev/null | grep '^TEXMF='`
+ 
+ 
+ echo $ac_n "checking for POSIXized ISC""... $ac_c" 1>&6

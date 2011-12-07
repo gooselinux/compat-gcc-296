@@ -1,0 +1,52 @@
+2001-02-06  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-lex.c (check_newline): Save yylval and restore it before
+	returning.
+
+	* gcc.c-torture/execute/20010206-1.c: New test.
+
+--- gcc/c-lex.c.jj	Sat Feb  3 23:47:55 2001
++++ gcc/c-lex.c	Tue Feb  6 17:07:22 2001
+@@ -566,6 +566,7 @@ check_newline ()
+   int saw_line;
+   enum { act_none, act_push, act_pop } action;
+   int old_lineno, action_number, l;
++  YYSTYPE old_yylval;
+ 
+  restart:
+   /* Read first nonwhite char on the line.  */
+@@ -597,6 +598,7 @@ check_newline ()
+   /* Don't read beyond this line.  */
+   saw_line = 0;
+   linemode = 1;
++  old_yylval = yylval;
+   
+ #if USE_CPPLIB
+   if (cpp_token == CPP_VSPACE)
+@@ -844,6 +846,7 @@ linenum:
+   do
+     c = GETC();
+   while (c != '\n' && c != EOF);
++  yylval = old_yylval;
+   return c;
+ }
+ 
+--- gcc/testsuite/gcc.c-torture/execute/20010206-1.c.jj	Tue Feb  6 17:32:25 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010206-1.c	Tue Feb  6 17:23:36 2001
+@@ -0,0 +1,16 @@
++int foo (void)
++{
++  int i;
++#line 1 "20010206-1.c"
++  if (0) i = 1; else i
++#line 1 "20010206-1.c"
++    = 26;
++  return i;
++}
++
++int main ()
++{
++  if (foo () != 26)
++    abort ();
++  exit (0);
++}

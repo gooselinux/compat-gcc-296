@@ -1,0 +1,129 @@
+2001-02-02  Jakub Jelinek  <jakub@redhat.com>
+
+	* decl.c (push_class_binding): Use context_for_name_lookup instead
+	of CP_DECL_CONTEXT.
+	* search.c (context_for_name_lookup): Remove static.  Check for NULL
+	context in the loop.
+	* cp-tree.h (context_for_name_lookup): Add prototype.
+
+	* g++.old-deja/g++.other/anon6.C: New test.
+	* g++.old-deja/g++.other/anon7.C: New test.
+
+--- gcc/cp/decl.c.jj	Wed Jan 31 14:08:34 2001
++++ gcc/cp/decl.c	Sat Feb  3 23:09:39 2001
+@@ -1165,7 +1165,7 @@ push_class_binding (id, decl)
+ 	  else
+ 	    {
+ 	      my_friendly_assert (DECL_P (decl), 0);
+-	      context = CP_DECL_CONTEXT (decl);
++	      context = context_for_name_lookup (decl);
+ 	    }
+ 
+ 	  if (is_properly_derived_from (current_class_type, context))
+--- gcc/cp/search.c.jj	Wed Jan 31 14:08:31 2001
++++ gcc/cp/search.c	Sat Feb  3 23:10:11 2001
+@@ -127,7 +127,6 @@ static tree bfs_walk
+ static tree lookup_field_queue_p PARAMS ((tree, void *));
+ static tree lookup_field_r PARAMS ((tree, void *));
+ static tree get_virtuals_named_this_r PARAMS ((tree, void *));
+-static tree context_for_name_lookup PARAMS ((tree));
+ static tree canonical_binfo PARAMS ((tree));
+ static tree shared_marked_p PARAMS ((tree, void *));
+ static tree shared_unmarked_p PARAMS ((tree, void *));
+@@ -721,7 +720,7 @@ at_function_scope_p ()
+ 
+ /* Return the scope of DECL, as appropriate when doing name-lookup.  */
+ 
+-static tree
++tree
+ context_for_name_lookup (decl)
+      tree decl;
+ {
+@@ -731,9 +730,9 @@ context_for_name_lookup (decl)
+      definition, the members of the anonymous union are considered to
+      have been defined in the scope in which the anonymous union is
+      declared.  */ 
+-  tree context = CP_DECL_CONTEXT (decl);
++  tree context = DECL_CONTEXT (decl);
+ 
+-  while (TYPE_P (context) && ANON_AGGR_TYPE_P (context))
++  while (context && TYPE_P (context) && ANON_AGGR_TYPE_P (context))
+     context = TYPE_CONTEXT (context);
+   if (!context)
+     context = global_namespace;
+--- gcc/cp/cp-tree.h.jj	Wed Jan 31 14:08:32 2001
++++ gcc/cp/cp-tree.h	Sat Feb  3 23:09:40 2001
+@@ -4307,6 +4307,7 @@ extern void init_search_processing		PARA
+ extern void reinit_search_statistics		PARAMS ((void));
+ extern tree current_scope			PARAMS ((void));
+ extern int at_function_scope_p                  PARAMS ((void));
++extern tree context_for_name_lookup		PARAMS ((tree));
+ extern tree lookup_conversions			PARAMS ((tree));
+ extern tree binfo_for_vtable			PARAMS ((tree));
+ extern tree binfo_from_vbase			PARAMS ((tree));
+--- gcc/testsuite/g++.old-deja/g++.other/anon6.C.jj	Wed Jan 31 14:08:39 2001
++++ gcc/testsuite/g++.old-deja/g++.other/anon6.C	Wed Jan 31 14:08:39 2001
+@@ -0,0 +1,36 @@
++extern "C" void abort ();
++
++struct A {
++  union {
++    int a;
++    double b;
++    int d;
++  };
++  int c;
++};
++
++struct B : public A {
++  union {
++    double a;
++    void *c;
++  };
++  float b;
++  int e;
++};
++
++int main ()
++{
++  struct B b;
++
++  b.a = 1.5;
++  b.b = 2.5;
++  b.d = 1;
++  b.e = 2;
++  if (b.a != 1.5 || b.b != 2.5 || b.d != 1 || b.e != 2)
++    abort ();
++  b.c = &b.a;
++  b.d = b.e;
++  if (b.c != &b.a || b.d != 2)
++    abort ();
++  return 0;
++}
+--- gcc/testsuite/g++.old-deja/g++.other/anon7.C.jj	Wed Jan 31 14:08:39 2001
++++ gcc/testsuite/g++.old-deja/g++.other/anon7.C	Wed Jan 31 14:08:39 2001
+@@ -0,0 +1,24 @@
++// Build don't link:
++
++struct A {
++  union {
++    int a;	// ERROR - conflicts with previous declaration
++  };
++  int a;	// ERROR - 
++};
++
++struct B {
++  int b;	// ERROR - conflicts with previous declaration
++  union {
++    int b;	// ERROR - duplicate member
++  };		// ERROR - declaration of
++};
++
++struct C {
++  union {
++    int c;	// ERROR - conflicts with previous declaration
++  };
++  union {
++    int c;	// ERROR - duplicate member
++  };		// ERROR - declaration of
++};

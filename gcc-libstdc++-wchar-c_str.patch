@@ -1,0 +1,16 @@
+2003-05-21  Bernd Schmidt  <bernds@redhat.com>
+
+	* std/bastring.h [__GLIBCPP_WCHAR_SUPPORT__] (c_str): Always
+	call terminate and data.
+
+--- libstdc++/std/bastring.h	2003-03-28 13:22:00.000000000 +0000
++++ libstdc++/std/bastring.h	2003-05-21 00:19:04.000000000 +0100
+@@ -341,7 +341,7 @@
+ public:
+   const charT* c_str () const
+ #ifdef __GLIBCPP_WCHAR_SUPPORT__
+-    { if (length () == 0) return traits::empty(); terminate (); return data (); }
++    { terminate (); return data (); }
+ #else
+     { if (length () == 0) return ""; terminate (); return data (); }
+ #endif

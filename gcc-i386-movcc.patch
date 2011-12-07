@@ -1,0 +1,67 @@
+2001-04-22  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.c (ix86_expand_int_movcc): If overlap between
+	out and comparison sequence has been detected, put result into
+	proper temporary pseudo.
+
+	* gcc.c-torture/execute/20010422-1.c: New test.
+
+--- gcc/config/i386/i386.c.jj	Wed Apr 18 17:20:58 2001
++++ gcc/config/i386/i386.c	Sun Apr 22 21:56:03 2001
+@@ -6279,7 +6279,7 @@ ix86_expand_int_movcc (operands)
+ 	       * Size 5 - 8.
+ 	       */
+ 	      if (ct)
+-	        emit_insn (gen_addsi3 (out, out, GEN_INT (ct)));
++	        emit_insn (gen_addsi3 (tmp, tmp, GEN_INT (ct)));
+ 	    }
+ 	  else if (cf == -1)
+ 	    {
+@@ -6290,7 +6290,7 @@ ix86_expand_int_movcc (operands)
+ 	       *
+ 	       * Size 8.
+ 	       */
+-	      emit_insn (gen_iorsi3 (out, out, GEN_INT (ct)));
++	      emit_insn (gen_iorsi3 (tmp, tmp, GEN_INT (ct)));
+ 	    }
+ 	  else if (diff == -1 && ct)
+ 	    {
+@@ -6304,7 +6304,7 @@ ix86_expand_int_movcc (operands)
+ 	       */
+ 	      emit_insn (gen_one_cmplsi2 (tmp, tmp));
+ 	      if (cf)
+-	        emit_insn (gen_addsi3 (out, out, GEN_INT (cf)));
++	        emit_insn (gen_addsi3 (tmp, tmp, GEN_INT (cf)));
+ 	    }
+ 	  else
+ 	    {
+@@ -6316,9 +6316,9 @@ ix86_expand_int_movcc (operands)
+ 	       *
+ 	       * Size 8 - 11.
+ 	       */
+-	      emit_insn (gen_andsi3 (out, out, GEN_INT (cf - ct)));
++	      emit_insn (gen_andsi3 (tmp, tmp, GEN_INT (cf - ct)));
+ 	      if (ct)
+-	        emit_insn (gen_addsi3 (out, out, GEN_INT (ct)));
++	        emit_insn (gen_addsi3 (tmp, tmp, GEN_INT (ct)));
+ 	    }
+ 
+ 	  if (tmp != out)
+--- gcc/testsuite/gcc.c-torture/execute/20010422-1.c.jj	Sun Apr 22 21:59:40 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010422-1.c	Sun Apr 22 21:59:23 2001
+@@ -0,0 +1,15 @@
++unsigned int foo(unsigned int x)
++{
++  if (x < 5)
++    x = 4;
++  else
++    x = 8;
++  return x;
++}
++
++int main(void)
++{
++  if (foo (8) != 8)
++    abort ();
++  exit (0);
++}

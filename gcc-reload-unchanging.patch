@@ -1,0 +1,17 @@
+2003-05-28  Bernd Schmidt  <bernds@redhat.com>
+
+	* reload1.c (reload): Set RTX_UNCHANGING_P to 0 unconditionally.
+
+--- gcc/reload1.c.jj	2003-05-22 20:58:12.000000000 +0100
++++ gcc/reload1.c	2003-05-28 14:52:10.000000000 +0100
+@@ -1091,7 +1091,9 @@
+ 	      PUT_CODE (reg, MEM);
+ 	      XEXP (reg, 0) = addr;
+ 	      REG_USERVAR_P (reg) = 0;
+-	      RTX_UNCHANGING_P (reg) = is_readonly;
++	      /* By tying this memory to a register it may no longer be
++		 unchanging.  */
++	      RTX_UNCHANGING_P (reg) = 0;
+ 	      MEM_IN_STRUCT_P (reg) = in_struct;
+ 	      MEM_SCALAR_P (reg) = is_scalar;
+ 	      /* We have no alias information about this newly created

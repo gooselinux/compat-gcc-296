@@ -1,0 +1,301 @@
+2001-04-30  Jan Hubicka  <jh@suse.cz>
+            Richard Henderson  <rth@redhat.com>
+
+	* regmove.c (try_apply_stack_adjustment): Remove now redundant
+	sanity checks.
+	(combine_stack_adjustments_for_block): Don't combine stack
+	allocation followed by deallocations.  Handle grow-up stacks.
+
+2002-02-14  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.dg/below-sp.c: New test.
+
+--- gcc/regmove.c.jj	Thu Nov 29 01:42:30 2001
++++ gcc/regmove.c	Thu Feb 14 21:42:10 2002
+@@ -41,6 +41,14 @@ Boston, MA 02111-1307, USA.  */
+ #include "basic-block.h"
+ #include "toplev.h"
+ 
++/* Turn STACK_GROWS_DOWNWARD into a boolean.  */
++#ifdef STACK_GROWS_DOWNWARD
++#undef STACK_GROWS_DOWNWARD
++#define STACK_GROWS_DOWNWARD 1
++#else
++#define STACK_GROWS_DOWNWARD 0
++#endif
++
+ static int optimize_reg_copy_1	PARAMS ((rtx, rtx, rtx));
+ static void optimize_reg_copy_2	PARAMS ((rtx, rtx, rtx));
+ static void optimize_reg_copy_3	PARAMS ((rtx, rtx, rtx));
+@@ -2220,14 +2228,6 @@ try_apply_stack_adjustment (insn, memlis
+   struct csa_memlist *ml;
+   rtx set;
+ 
+-  /* We know INSN matches single_set_for_csa, because that's what we
+-     recognized earlier.  However, if INSN is not single_set, it is
+-     doing double duty as a barrier for frame pointer memory accesses,
+-     which we are not recording.  Therefore, an adjust insn that is not
+-     single_set may not have a positive delta applied.  */
+-
+-  if (delta > 0 && ! single_set (insn))
+-    return 0;
+   set = single_set_for_csa (insn);
+   validate_change (insn, &XEXP (SET_SRC (set), 1), GEN_INT (new_adjust), 1);
+ 
+@@ -2237,13 +2237,6 @@ try_apply_stack_adjustment (insn, memlis
+       rtx new = gen_rtx_MEM (GET_MODE (*ml->mem),
+ 			     plus_constant (stack_pointer_rtx, c));
+ 
+-      /* Don't reference memory below the stack pointer.  */
+-      if (c < 0)
+-	{
+-	  cancel_changes (0);
+-	  return 0;
+-	}
+-
+       MEM_COPY_ATTRIBUTES (new, *ml->mem);
+       validate_change (ml->insn, ml->mem, new, 1);
+     }
+@@ -2363,35 +2356,63 @@ combine_stack_adjustments_for_block (bb)
+ 
+ 	      /* If not all recorded memrefs can be adjusted, or the
+ 		 adjustment is now too large for a constant addition,
+-		 we cannot merge the two stack adjustments.  */
+-	      if (! try_apply_stack_adjustment (last_sp_set, memlist,
+-						last_sp_adjust + this_adjust,
+-						this_adjust))
+-		{
+-		  free_csa_memlist (memlist);
+-		  memlist = NULL;
+-		  last_sp_set = insn;
+-		  last_sp_adjust = this_adjust;
+-		  goto processed;
++		 we cannot merge the two stack adjustments.
++
++		 Also we need to be carefull to not move stack pointer
++		 such that we create stack accesses outside the allocated
++		 area.  We can combine an allocation into the first insn,
++		 or a deallocation into the second insn.  We can not
++		 combine an allocation followed by a deallocation.
++
++		 The only somewhat frequent ocurrence of the later is when
++		 a function allocates a stack frame but does not use it.
++		 For this case, we would need to analyze rtl stream to be
++		 sure that allocated area is really unused.  This means not
++		 only checking the memory references, but also all registers
++		 or global memory references possibly containing a stack
++		 frame address.
++
++		 Perhaps the best way to address this problem is to teach
++		 gcc not to allocate stack for objects never used.  */
++
++	      /* Combine an allocation into the first instruction.  */
++	      if (STACK_GROWS_DOWNWARD ? this_adjust <= 0 : this_adjust >= 0)
++		{
++		  if (try_apply_stack_adjustment (last_sp_set, memlist,
++						  last_sp_adjust + this_adjust,
++						  this_adjust))
++		    {
++		      /* It worked!  */
++		      pending_delete = insn;
++		      last_sp_adjust += this_adjust;
++		      goto processed;
++		    }
+ 		}
+ 
+-	      /* It worked!  */
+-	      pending_delete = insn;
+-	      last_sp_adjust += this_adjust;
+-
+-	      /* If, by some accident, the adjustments cancel out,
+-		 delete both insns and start from scratch.  */
+-	      if (last_sp_adjust == 0)
+-		{
+-		  if (last_sp_set == bb->head)
+-		    bb->head = NEXT_INSN (last_sp_set);
+-		  flow_delete_insn (last_sp_set);
+-
+-		  free_csa_memlist (memlist);
+-		  memlist = NULL;
+-		  last_sp_set = NULL_RTX;
++	      /* Otherwise we have a deallocation.  Do not combine with
++		 a previous allocation.  Combine into the second insn.  */
++	      else if (STACK_GROWS_DOWNWARD
++		       ? last_sp_adjust >= 0 : last_sp_adjust <= 0)
++		{
++		  if (try_apply_stack_adjustment (insn, memlist,
++						  last_sp_adjust + this_adjust,
++						  -last_sp_adjust))
++		    {
++		      /* It worked!  */
++		      flow_delete_insn (last_sp_set);
++		      last_sp_set = insn;
++		      last_sp_adjust += this_adjust;
++		      free_csa_memlist (memlist);
++		      memlist = NULL;
++		      goto processed;
++		    }
+ 		}
+ 
++	      /* Combination failed.  Restart processing from here.  */
++	      free_csa_memlist (memlist);
++	      memlist = NULL;
++	      last_sp_set = insn;
++	      last_sp_adjust = this_adjust;
+ 	      goto processed;
+ 	    }
+ 
+--- gcc/testsuite/gcc.dg/below-sp.c.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/gcc.dg/below-sp.c	Thu Feb 14 22:00:14 2002
+@@ -0,0 +1,151 @@
++/* { dg-do compile { target i?86-*-linux* } } */
++/* { dg-options "-O" } */
++
++void foo (unsigned int *buf, unsigned int *in)
++{
++  register unsigned int a, b, c, d;
++
++  a = buf[0];
++  b = buf[1];
++  c = buf[2];
++  d = buf[3];
++
++  a += (d ^ (b & (c ^ d))) + in[0] + 0xd76aa478;
++  a = a<<7 | a>>(32-7), a += b;
++  d += (c ^ (a & (b ^ c))) + in[1] + 0xe8c7b756;
++  d = d<<12 | d>>(32-12), d += a;
++  c += (b ^ (d & (a ^ b))) + in[2] + 0x242070db;
++  c = c<<17 | c>>(32-17), c += d;
++  b += (a ^ (c & (d ^ a))) + in[3] + 0xc1bdceee;
++  b = b<<22 | b>>(32-22), b += c;
++  a += (d ^ (b & (c ^ d))) + in[4] + 0xf57c0faf;
++  a = a<<7 | a>>(32-7), a += b;
++  d += (c ^ (a & (b ^ c))) + in[5] + 0x4787c62a;
++  d = d<<12 | d>>(32-12), d += a;
++  c += (b ^ (d & (a ^ b))) + in[6] + 0xa8304613;
++  c = c<<17 | c>>(32-17), c += d;
++  b += (a ^ (c & (d ^ a))) + in[7] + 0xfd469501;
++  b = b<<22 | b>>(32-22), b += c;
++  a += (d ^ (b & (c ^ d))) + in[8] + 0x698098d8;
++  a = a<<7 | a>>(32-7), a += b;
++  d += (c ^ (a & (b ^ c))) + in[9] + 0x8b44f7af;
++  d = d<<12 | d>>(32-12), d += a;
++  c += (b ^ (d & (a ^ b))) + in[10] + 0xffff5bb1;
++  c = c<<17 | c>>(32-17), c += d;
++  b += (a ^ (c & (d ^ a))) + in[11] + 0x895cd7be;
++  b = b<<22 | b>>(32-22), b += c;
++  a += (d ^ (b & (c ^ d))) + in[12] + 0x6b901122;
++  a = a<<7 | a>>(32-7), a += b;
++  d += (c ^ (a & (b ^ c))) + in[13] + 0xfd987193;
++  d = d<<12 | d>>(32-12), d += a;
++  c += (b ^ (d & (a ^ b))) + in[14] + 0xa679438e;
++  c = c<<17 | c>>(32-17), c += d;
++  b += (a ^ (c & (d ^ a))) + in[15] + 0x49b40821;
++  b = b<<22 | b>>(32-22), b += c;
++
++  a += (c ^ (d & (b ^ c))) + in[1] + 0xf61e2562;
++  a = a<<5 | a>>(32-5), a += b;
++  d += (b ^ (c & (a ^ b))) + in[6] + 0xc040b340;
++  d = d<<9 | d>>(32-9), d += a;
++  c += (a ^ (b & (d ^ a))) + in[11] + 0x265e5a51;
++  c = c<<14 | c>>(32-14), c += d;
++  b += (d ^ (a & (c ^ d))) + in[0] + 0xe9b6c7aa;
++  b = b<<20 | b>>(32-20), b += c;
++  a += (c ^ (d & (b ^ c))) + in[5] + 0xd62f105d;
++  a = a<<5 | a>>(32-5), a += b;
++  d += (b ^ (c & (a ^ b))) + in[10] + 0x02441453;
++  d = d<<9 | d>>(32-9), d += a;
++  c += (a ^ (b & (d ^ a))) + in[15] + 0xd8a1e681;
++  c = c<<14 | c>>(32-14), c += d;
++  b += (d ^ (a & (c ^ d))) + in[4] + 0xe7d3fbc8;
++  b = b<<20 | b>>(32-20), b += c;
++  a += (c ^ (d & (b ^ c))) + in[9] + 0x21e1cde6;
++  a = a<<5 | a>>(32-5), a += b;
++  d += (b ^ (c & (a ^ b))) + in[14] + 0xc33707d6;
++  d = d<<9 | d>>(32-9), d += a;
++  c += (a ^ (b & (d ^ a))) + in[3] + 0xf4d50d87;
++  c = c<<14 | c>>(32-14), c += d;
++  b += (d ^ (a & (c ^ d))) + in[8] + 0x455a14ed;
++  b = b<<20 | b>>(32-20), b += c;
++  a += (c ^ (d & (b ^ c))) + in[13] + 0xa9e3e905;
++  a = a<<5 | a>>(32-5), a += b;
++  d += (b ^ (c & (a ^ b))) + in[2] + 0xfcefa3f8;
++  d = d<<9 | d>>(32-9), d += a;
++  c += (a ^ (b & (d ^ a))) + in[7] + 0x676f02d9;
++  c = c<<14 | c>>(32-14), c += d;
++  b += (d ^ (a & (c ^ d))) + in[12] + 0x8d2a4c8a;
++  b = b<<20 | b>>(32-20), b += c;
++
++  a += (b ^ c ^ d) + in[5] + 0xfffa3942;
++  a = a<<4 | a>>(32-4), a += b;
++  d += (a ^ b ^ c) + in[8] + 0x8771f681;
++  d = d<<11 | d>>(32-11), d += a;
++  c += (d ^ a ^ b) + in[11] + 0x6d9d6122;
++  c = c<<16 | c>>(32-16), c += d;
++  b += (c ^ d ^ a) + in[14] + 0xfde5380c;
++  b = b<<23 | b>>(32-23), b += c;
++  a += (b ^ c ^ d) + in[1] + 0xa4beea44;
++  a = a<<4 | a>>(32-4), a += b;
++  d += (a ^ b ^ c) + in[4] + 0x4bdecfa9;
++  d = d<<11 | d>>(32-11), d += a;
++  c += (d ^ a ^ b) + in[7] + 0xf6bb4b60;
++  c = c<<16 | c>>(32-16), c += d;
++  b += (c ^ d ^ a) + in[10] + 0xbebfbc70;
++  b = b<<23 | b>>(32-23), b += c;
++  a += (b ^ c ^ d) + in[13] + 0x289b7ec6;
++  a = a<<4 | a>>(32-4), a += b;
++  d += (a ^ b ^ c) + in[0] + 0xeaa127fa;
++  d = d<<11 | d>>(32-11), d += a;
++  c += (d ^ a ^ b) + in[3] + 0xd4ef3085;
++  c = c<<16 | c>>(32-16), c += d;
++  b += (c ^ d ^ a) + in[6] + 0x04881d05;
++  b = b<<23 | b>>(32-23), b += c;
++  a += (b ^ c ^ d) + in[9] + 0xd9d4d039;
++  a = a<<4 | a>>(32-4), a += b;
++  d += (a ^ b ^ c) + in[12] + 0xe6db99e5;
++  d = d<<11 | d>>(32-11), d += a;
++  c += (d ^ a ^ b) + in[15] + 0x1fa27cf8;
++  c = c<<16 | c>>(32-16), c += d;
++  b += (c ^ d ^ a) + in[2] + 0xc4ac5665;
++  b = b<<23 | b>>(32-23), b += c;
++
++  a += (c ^ (b | ~d)) + in[0] + 0xf4292244;
++  a = a<<6 | a>>(32-6), a += b;
++  d += (b ^ (a | ~c)) + in[7] + 0x432aff97;
++  d = d<<10 | d>>(32-10), d += a;
++  c += (a ^ (d | ~b)) + in[14] + 0xab9423a7;
++  c = c<<15 | c>>(32-15), c += d;
++  b += (d ^ (c | ~a)) + in[5] + 0xfc93a039;
++  b = b<<21 | b>>(32-21), b += c;
++  a += (c ^ (b | ~d)) + in[12] + 0x655b59c3;
++  a = a<<6 | a>>(32-6), a += b;
++  d += (b ^ (a | ~c)) + in[3] + 0x8f0ccc92;
++  d = d<<10 | d>>(32-10), d += a;
++  c += (a ^ (d | ~b)) + in[10] + 0xffeff47d;
++  c = c<<15 | c>>(32-15), c += d;
++  b += (d ^ (c | ~a)) + in[1] + 0x85845dd1;
++  b = b<<21 | b>>(32-21), b += c;
++  a += (c ^ (b | ~d)) + in[8] + 0x6fa87e4f;
++  a = a<<6 | a>>(32-6), a += b;
++  d += (b ^ (a | ~c)) + in[15] + 0xfe2ce6e0;
++  d = d<<10 | d>>(32-10), d += a;
++  c += (a ^ (d | ~b)) + in[6] + 0xa3014314;
++  c = c<<15 | c>>(32-15), c += d;
++  b += (d ^ (c | ~a)) + in[13] + 0x4e0811a1;
++  b = b<<21 | b>>(32-21), b += c;
++  a += (c ^ (b | ~d)) + in[4] + 0xf7537e82;
++  a = a<<6 | a>>(32-6), a += b;
++  d += (b ^ (a | ~c)) + in[11] + 0xbd3af235;
++  d = d<<10 | d>>(32-10), d += a;
++  c += (a ^ (d | ~b)) + in[2] + 0x2ad7d2bb;
++  c = c<<15 | c>>(32-15), c += d;
++  b += (d ^ (c | ~a)) + in[9] + 0xeb86d391;
++  b = b<<21 | b>>(32-21), b += c;
++
++  buf[0] += a;
++  buf[1] += b;
++  buf[2] += c;
++  buf[3] += d;
++}
++
++/* { dg-final { scan-assembler below-sp.c "sub.*sp" } } */

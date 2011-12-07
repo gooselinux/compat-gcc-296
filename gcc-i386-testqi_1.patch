@@ -1,0 +1,143 @@
+2001-01-29  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.md (addqi_1_lea): Fix mode (QI instead of HI).
+	(testqi_1, andqi_2): If widening to SImode, make sure CONST_INT does
+	not have any upper bits set.
+
+	* gcc.c-torture/execute/20010129-1.c: New test.
+	* gcc.c-torture/execute/20010129-1.x: Add -mcpu=i686 on ia32.
+
+--- gcc/config/i386/i386.md.jj	Wed Jan 17 14:24:28 2001
++++ gcc/config/i386/i386.md	Mon Jan 29 15:25:28 2001
+@@ -4983,10 +4983,10 @@
+   [(set (attr "type")
+      (if_then_else (eq_attr "alternative" "3")
+ 	(const_string "lea")
+-	(if_then_else (match_operand:HI 2 "incdec_operand" "")
++	(if_then_else (match_operand:QI 2 "incdec_operand" "")
+ 	   (const_string "incdec")
+ 	   (const_string "alu"))))
+-   (set_attr "mode" "HI,HI,SI,SI")])
++   (set_attr "mode" "QI,QI,SI,SI")])
+ 
+ (define_insn "*addqi_1"
+   [(set (match_operand:QI 0 "nonimmediate_operand" "=qm,q,r")
+@@ -5959,11 +5959,17 @@
+ 			 (match_operand:QI 1 "nonmemory_operand" "n,n,qn,n"))
+ 		 (const_int 0)))]
+   "ix86_match_ccmode (insn, CCNOmode)"
+-  "@
+-   test{b}\\t{%1, %0|%0, %1} 
+-   test{b}\\t{%1, %0|%0, %1} 
+-   test{b}\\t{%1, %0|%0, %1} 
+-   test{l}\\t{%1, %k0|%k0, %1}"
++  "*
++{
++  if (which_alternative == 3)
++    {
++      if (GET_CODE (operands[1]) == CONST_INT
++	  && (INTVAL (operands[1]) & 0xffffff00))
++	operands[1] = GEN_INT (INTVAL (operands[1]) & 0xff);
++      return \"test{l}\\t{%1, %k0|%k0, %1}\";
++    }
++  return \"test{b}\\t{%1, %0|%0, %1}\";
++}"
+   [(set_attr "type" "test")
+    (set_attr "modrm" "0,1,1,1")
+    (set_attr "mode" "QI,QI,QI,SI")
+@@ -6283,10 +6289,17 @@
+ 	(and:QI (match_dup 1) (match_dup 2)))]
+   "ix86_match_ccmode (insn, CCNOmode)
+    && ix86_binary_operator_ok (AND, QImode, operands)"
+-  "@
+-   and{b}\\t{%2, %0|%0, %2}
+-   and{b}\\t{%2, %0|%0, %2}
+-   and{l}\\t{%2, %k0|%k0, %2}"
++  "*
++{
++  if (which_alternative == 2)
++    {
++      if (GET_CODE (operands[2]) == CONST_INT
++          && (INTVAL (operands[2]) & 0xffffff00))
++        operands[2] = GEN_INT (INTVAL (operands[2]) & 0xff);
++      return \"and{l}\\t{%2, %k0|%k0, %2}\";
++    }
++  return \"and{b}\\t{%2, %0|%0, %2}\";
++}"
+   [(set_attr "type" "alu")
+    (set_attr "mode" "QI,QI,SI")])
+ 
+--- gcc/testsuite/gcc.c-torture/execute/20010129-1.x.jj	Mon Jan 29 14:30:39 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010129-1.x	Mon Jan 29 14:31:26 2001
+@@ -0,0 +1,4 @@
++if { [istarget "i?86-*-*"] } {
++  set additional_flags "-mcpu=i686"
++}
++return 0
+--- gcc/testsuite/gcc.c-torture/execute/20010129-1.c.jj	Mon Jan 29 14:30:56 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010129-1.c	Mon Jan 29 14:23:43 2001
+@@ -0,0 +1,64 @@
++long baz1 (void *a)
++{
++  static long l;
++  return l++;
++}
++
++int baz2 (const char *a)
++{
++  return 0;
++}
++
++int baz3 (int i)
++{
++  if (!i)
++    abort ();
++  return 1;
++}
++
++void **bar;
++
++int foo (void *a, long b, int c)
++{
++  int d = 0, e, f = 0, i;
++  char g[256];
++  void **h;
++
++  g[0] = '\n';
++  g[1] = 0;
++
++  while (baz1 (a) < b) {
++    if (g[0] != ' ' && g[0] != '\t') {
++      f = 1;
++      e = 0;
++      if (!d && baz2 (g) == 0) {
++	if ((c & 0x10) == 0)
++	  continue;
++	e = d = 1;
++      }
++      if (!((c & 0x10) && (c & 0x4000) && e) && (c & 2))
++	continue;
++      if ((c & 0x2000) && baz2 (g) == 0)
++	continue;
++      if ((c & 0x1408) && baz2 (g) == 0)
++	continue;
++      if ((c & 0x200) && baz2 (g) == 0)
++	continue;
++      if (c & 0x80) {
++	for (h = bar, i = 0; h; h = (void **)*h, i++)
++	  if (baz3 (i))
++	    break;
++      }
++      f = 0;
++    }
++  }
++  return 0;
++}
++
++int main ()
++{
++  void *n = 0;
++  bar = &n;
++  foo (&n, 1, 0xc811);
++  exit (0);
++}

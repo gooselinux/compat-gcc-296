@@ -1,0 +1,19 @@
+2001-02-15  Jakub Jelinek  <jakub@redhat.com>
+
+	* objc/objc-act.c (start_class): Register implemented_classes with
+	GC.
+
+--- gcc/objc/objc-act.c.jj	Mon Feb 12 10:30:13 2001
++++ gcc/objc/objc-act.c	Thu Feb 15 17:07:56 2001
+@@ -6130,7 +6130,10 @@ start_class (code, class_name, super_nam
+     {
+       {
+         static tree implemented_classes = 0;
+-        tree chain = implemented_classes;
++        tree chain;
++
++	if (!implemented_classes)
++	  ggc_add_tree_root (&implemented_classes, 1);
+         for (chain = implemented_classes; chain; chain = TREE_CHAIN (chain))
+            if (TREE_VALUE (chain) == class_name)
+ 	     {

@@ -1,0 +1,68 @@
+2001-08-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* function.c (assign_parms): Set last_named only for last named
+	argument.
+
+	* g++.old-deja/g++.other/stdarg1.C: New test.
+
+--- gcc/function.c.jj	Sat Aug 18 22:20:36 2001
++++ gcc/function.c	Mon Aug 20 16:39:04 2001
+@@ -4329,16 +4329,25 @@ assign_parms (fndecl)
+       tree passed_type = DECL_ARG_TYPE (parm);
+       tree nominal_type = TREE_TYPE (parm);
+       int pretend_named;
++      int last_named = 0, named_arg;
+ 
+-      /* Set LAST_NAMED if this is last named arg before some
++      /* Set LAST_NAMED if this is last named arg before last
+ 	 anonymous args.  */
+-      int last_named = ((TREE_CHAIN (parm) == 0
+-			 || DECL_NAME (TREE_CHAIN (parm)) == 0)
+-			&& (stdarg || current_function_varargs));
++      if (stdarg || current_function_varargs)
++	{
++	  tree tem;
++
++	  for (tem = TREE_CHAIN (parm); tem; tem = TREE_CHAIN (tem))
++	    if (DECL_NAME (tem))
++	      break;
++
++	  if (tem == 0)
++	    last_named = 1;
++	}
+       /* Set NAMED_ARG if this arg should be treated as a named arg.  For
+ 	 most machines, if this is a varargs/stdarg function, then we treat
+ 	 the last named arg as if it were anonymous too.  */
+-      int named_arg = STRICT_ARGUMENT_NAMING ? 1 : ! last_named;
++      named_arg = STRICT_ARGUMENT_NAMING ? 1 : ! last_named;
+ 
+       if (TREE_TYPE (parm) == error_mark_node
+ 	  /* This can happen after weird syntax errors
+--- gcc/testsuite/g++.old-deja/g++.other/stdarg1.C.jj	Mon Aug 20 16:53:05 2001
++++ gcc/testsuite/g++.old-deja/g++.other/stdarg1.C	Mon Aug 20 16:53:02 2001
+@@ -0,0 +1,25 @@
++// Test stdarg function with anonymous argument
++
++#include <stdarg.h>
++
++extern "C" void abort (void);
++
++void baz (va_list list)
++{
++  if (va_arg (list, long) != 3)
++    abort ();
++}
++
++void foo (long p1, long, long p2, ...)
++{
++  va_list list;
++  va_start (list, p2);
++  baz (list);
++  va_end (list);
++}
++
++int main ()
++{
++  foo (0, 1, 2, 3);
++  return 0;
++}

@@ -1,0 +1,70 @@
+--- gcc/cp/Makefile.in.jj	Mon Nov 12 15:46:06 2001
++++ gcc/cp/Makefile.in	Mon Nov 19 16:03:15 2001
+@@ -184,7 +184,9 @@ OBJDEPS = ../stamp-objlist ../c-common.o
+ 
+ compiler: ../cc1plus$(exeext)
+ ../cc1plus$(exeext): $(P) $(OBJDEPS) $(CXX_OBJS) $(LIBDEPS)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(CXX_OBJS) $(LIBS)
++	TMPCXX=../tmp-cc1plus.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPCXX $(OBJS) $(CXX_OBJS) $(LIBS) && \
++	mv -f $$TMPCXX $@
+ 
+ Makefile: $(srcdir)/Makefile.in $(srcdir)/../configure
+ 	cd ..; $(SHELL) config.status
+--- gcc/f/Makefile.in.jj	Thu Jun 22 13:47:25 2000
++++ gcc/f/Makefile.in	Mon Nov 19 16:02:32 2001
+@@ -206,7 +206,9 @@ OBJDEPS = ../stamp-objlist
+ compiler: ../f771$(exeext)
+ ../f771$(exeext): $(P) $(F77_OBJS) $(OBJDEPS) $(LIBDEPS)
+ 	rm -f f771$(exeext)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $(F77_OBJS) $(OBJS) $(LIBS)
++	TMPF77=../tmp-f771.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPF77 $(F77_OBJS) $(OBJS) $(LIBS) && \
++	mv -f $$TMPF77 $@
+ 
+ Makefile: $(srcdir)/Makefile.in $(srcdir)/../configure
+ 	cd ..; $(SHELL) config.status
+--- gcc/java/Makefile.in.jj	Mon Nov 12 15:45:48 2001
++++ gcc/java/Makefile.in	Mon Nov 19 16:02:01 2001
+@@ -186,24 +186,34 @@ OBJDEPS = ../stamp-objlist ../ggc-callba
+ compiler: ../jc1$(exeext) ../jv-scan$(exeext)
+ ../jc1$(exeext): $(P) $(JAVA_OBJS) $(OBJDEPS) $(LIBDEPS)
+ 	rm -f ../jc1$(exeext)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $(JAVA_OBJS) $(OBJS) $(LIBS)
++	TMPJC1=../tmp-jc1.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPJC1 $(JAVA_OBJS) $(OBJS) $(LIBS) && \
++	mv -f $$TMPJC1 $@
+ ../jv-scan$(exeext): $(P) $(JAVA_OBJS_LITE) $(OBJDEPS) ../version.o $(LIBDEPS)
+ 	rm -f ../jv-scan$(exeext)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ $(JAVA_OBJS_LITE) ../version.o $(LIBS)
++	TMPJVS=../tmp-jv-scan.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPJVS $(JAVA_OBJS_LITE) ../version.o $(LIBS) && \
++	mv -f $$TMPJVS $@
+ 
+ ../jcf-dump$(exeext): jcf-dump.o jcf-io.o jcf-depend.o jcf-path.o \
+ 		zextract.o ../version.o $(LIBDEPS)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ jcf-dump.o jcf-io.o \
+-	  jcf-depend.o jcf-path.o zextract.o ../errors.o ../version.o $(LIBS)
++	TMPJCD=../tmp-jcf-dump.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPJCD jcf-dump.o jcf-io.o \
++	  jcf-depend.o jcf-path.o zextract.o ../errors.o ../version.o $(LIBS) && \
++	mv -f $$TMPJCD $@
+ 
+ # Dependencies here must be kept in sync with dependencies in Make-lang.in.
+ ../jvgenmain$(exeext):  jvgenmain.o mangle.o $(LIBDEPS)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ jvgenmain.o mangle.o $(LIBS)
++	TMPJVG=../tmp-jvgenmain.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPJVG jvgenmain.o mangle.o $(LIBS) && \
++	mv -f $$TMPJVG $@
+ 
+ ../gcjh$(exeext): gjavah.o jcf-io.o jcf-depend.o jcf-path.o \
+ 		zextract.o ../version.o $(LIBDEPS)
+-	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $@ gjavah.o jcf-io.o \
+-	  jcf-depend.o jcf-path.o zextract.o ../errors.o ../version.o $(LIBS)
++	TMPGCJH=../tmp-gcjh.$$$$; \
++	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o $$TMPGCJH gjavah.o jcf-io.o \
++	  jcf-depend.o jcf-path.o zextract.o ../errors.o ../version.o $(LIBS) && \
++	mv -f $$TMPGCJH $@
+ 
+ Makefile: $(srcdir)/Makefile.in $(srcdir)/../configure
+ 	cd ..; $(SHELL) config.status

@@ -1,0 +1,32 @@
+2001-01-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* objc/objc-act.c (lang_init): Make objc work with the 20010126
+	standalone cpp.
+
+--- gcc/objc/objc-act.c.jj	Thu Jun 22 13:47:29 2000
++++ gcc/objc/objc-act.c	Fri Jan 26 18:53:45 2001
+@@ -708,6 +708,7 @@ lang_init_options ()
+ void
+ lang_init ()
+ {
++  int savedline;
+ #if !USE_CPPLIB
+   /* The beginning of the file is a new line; check for #.
+      With luck, we discover the real source file's name from that
+@@ -723,6 +724,8 @@ lang_init ()
+      functions to have a line number of 0, not -1.  */
+   if (lineno == -1)
+     lineno = 0;
++  savedline = lineno;
++  lineno = 0;
+ 
+   /* If gen_declaration desired, open the output file.  */
+   if (flag_gen_declaration)
+@@ -762,6 +765,7 @@ lang_init ()
+ 
+   objc_act_parse_init ();
+   c_parse_init ();
++  lineno = savedline;
+ }
+ 
+ static void

@@ -1,0 +1,24 @@
+2001-01-08  Graham Stott  <grahams@redhat.com>
+
+	* cppfiles.c (_cpp_execute_include): Move `len` initialisation
+	after `ptr` is initialised.
+
+--- gcc/cppfiles.c.jj	Fri Jan 19 00:01:04 2001
++++ gcc/cppfiles.c	Fri Jan 19 00:12:09 2001
+@@ -477,7 +477,7 @@ _cpp_execute_include (pfile, f, len, no_
+ 	{
+ 	  char *p;
+ 	  struct file_name_list *ptr;
+-	  int len = strlen (ptr->name);
++	  int len;
+ 
+ 	  /* If requested as a system header, assume it belongs in
+ 	     the first system header directory. */
+@@ -486,6 +486,7 @@ _cpp_execute_include (pfile, f, len, no_
+ 	  else
+ 	    ptr = CPP_OPTION (pfile, quote_include);
+ 
++	  len = strlen (ptr->name);
+ 	  p = (char *) alloca (len + strlen (fname) + 2);
+ 	  if (len)
+ 	    {

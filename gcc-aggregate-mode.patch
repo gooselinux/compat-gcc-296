@@ -1,0 +1,78 @@
+2000-10-24  Jim Wilson  <wilson@cygnus.com>
+
+	* expmed.c (store_bit_field): Move integer pun code down after
+	code that calls emit_move_insn for entire register move.
+	* stor-layout.c (compute_record_mode): Revert Mar 25 change.
+	Only store mode in TYPE_MODE if RECORD_TYPE.
+
+--- gcc/expmed.c.jj	Wed Dec  6 16:50:18 2000
++++ gcc/expmed.c	Mon Dec 11 13:16:56 2000
+@@ -267,21 +267,6 @@ store_bit_field (str_rtx, bitsize, bitnu
+       op0 = SUBREG_REG (op0);
+     }
+ 
+-  /* Make sure we are playing with integral modes.  Pun with subregs
+-     if we aren't.  */
+-  {
+-    enum machine_mode imode = int_mode_for_mode (GET_MODE (op0));
+-    if (imode != GET_MODE (op0))
+-      {
+-	if (GET_CODE (op0) == MEM)
+-	  op0 = change_address (op0, imode, NULL_RTX);
+-	else if (imode != BLKmode)
+-	  op0 = gen_lowpart (imode, op0);
+-	else
+-	  abort ();
+-      }
+-  }
+-
+   /* If OP0 is a register, BITPOS must count within a word.
+      But as we have it, it counts within whatever size OP0 now has.
+      On a bigendian machine, these are not the same, so convert.  */
+@@ -336,6 +321,23 @@ store_bit_field (str_rtx, bitsize, bitnu
+       emit_move_insn (op0, value);
+       return value;
+     }
++
++  /* Make sure we are playing with integral modes.  Pun with subregs
++     if we aren't.  This must come after the entire register case above,
++     since that case is valid for any mode.  The following cases are only
++     valid for integral modes.  */
++  {
++    enum machine_mode imode = int_mode_for_mode (GET_MODE (op0));
++    if (imode != GET_MODE (op0))
++      {
++	if (GET_CODE (op0) == MEM)
++	  op0 = change_address (op0, imode, NULL_RTX);
++	else if (imode != BLKmode)
++	  op0 = gen_lowpart (imode, op0);
++	else
++	  abort ();
++      }
++  }
+ 
+   /* Storing an lsb-aligned field in a register
+      can be done with a movestrict instruction.  */
+--- gcc/stor-layout.c.jj	Wed Dec  6 16:50:22 2000
++++ gcc/stor-layout.c	Mon Dec 11 13:37:44 2000
+@@ -1073,7 +1073,7 @@ compute_record_mode (type)
+       /* If this field is the whole struct, remember its mode so
+ 	 that, say, we can put a double in a class into a DF
+ 	 register instead of forcing it to live in the stack.  */
+-      if (field == TYPE_FIELDS (type) && TREE_CHAIN (field) == 0)
++      if (simple_cst_equal (TYPE_SIZE (type), DECL_SIZE (field)))
+ 	mode = DECL_MODE (field);
+ 
+ #ifdef STRUCT_FORCE_BLK
+@@ -1084,8 +1084,9 @@ compute_record_mode (type)
+ #endif /* STRUCT_FORCE_BLK  */
+     }
+ 
+-  if (mode != VOIDmode)
+-    /* We only have one real field; use its mode.  */
++  /* If we only have one real field; use its mode.  This only applies to
++     RECORD_TYPE.  This does not apply to unions.  */
++  if (TREE_CODE (type) == RECORD_TYPE && mode != VOIDmode)
+     TYPE_MODE (type) = mode;
+   else
+     TYPE_MODE (type) = mode_for_size_tree (TYPE_SIZE (type), MODE_INT, 1);

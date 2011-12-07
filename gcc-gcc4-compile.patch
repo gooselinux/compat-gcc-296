@@ -1,0 +1,11 @@
+--- gcc/fixinc/gnu-regex.c.jj	2000-05-12 09:53:00.000000000 +0200
++++ gcc/fixinc/gnu-regex.c	2005-03-08 20:57:17.810490285 +0100
+@@ -965,7 +965,7 @@ printchar (c)
+    syntax, so it can be changed between regex compilations.  */
+ /* This has no initializer because initialized variables in Emacs
+    become read-only after dumping.  */
+-static reg_syntax_t re_syntax_options;
++reg_syntax_t re_syntax_options;
+ 
+ 
+ /* Specify the precise syntax of regexps for compilation.  This provides

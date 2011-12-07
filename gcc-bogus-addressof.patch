@@ -1,0 +1,90 @@
+2003-10-30  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/compile/20031030-1.c: New test.
+
+2003-06-10  Bernd Schmidt  <bernds@redhat.com>
+
+	* cse.c (fold_rtx): Don't fold ADDRESSOFs with inner float mode
+	and outer mode different from inner.
+	* recog.c (general_operand): Return 0 for ADDRESSOFs with inner
+	float mode and outer mode different from inner.
+	(memory_address_p): Likewise.
+	* explow.c (memory_address): Force such ADDRESSOFs to register.
+
+--- gcc/cse.c.jj	2002-12-02 16:02:20.000000000 +0100
++++ gcc/cse.c	2003-10-30 17:21:58.000000000 +0100
+@@ -3406,7 +3406,7 @@ fold_rtx (x, insn)
+ 	else if (GET_CODE (addr) == LO_SUM
+ 		 && GET_CODE (XEXP (addr, 1)) == SYMBOL_REF)
+ 	  base = XEXP (addr, 1);
+-	else if (GET_CODE (addr) == ADDRESSOF)
++	else if (GET_CODE (addr) == ADDRESSOF && memory_address_p (mode, addr))
+ 	  return change_address (x, VOIDmode, addr);
+ 
+ 	/* If this is a constant pool reference, we can fold it into its
+--- gcc/explow.c.jj	2000-07-24 11:04:18.000000000 +0200
++++ gcc/explow.c	2003-10-30 17:21:58.000000000 +0100
+@@ -477,7 +477,12 @@ memory_address (mode, x)
+   register rtx oldx = x;
+ 
+   if (GET_CODE (x) == ADDRESSOF)
+-    return x;
++    {
++      rtx inner = XEXP (x, 0);
++      enum machine_mode inner_mode = GET_MODE (inner);
++      if (! (FLOAT_MODE_P (inner_mode) && inner_mode != mode))
++	return x;
++    }
+ 
+ #ifdef POINTERS_EXTEND_UNSIGNED
+   if (GET_MODE (x) == ptr_mode)
+@@ -486,7 +491,8 @@ memory_address (mode, x)
+ 
+   /* By passing constant addresses thru registers
+      we get a chance to cse them.  */
+-  if (! cse_not_expected && CONSTANT_P (x) && CONSTANT_ADDRESS_P (x))
++  if ((! cse_not_expected && CONSTANT_P (x) && CONSTANT_ADDRESS_P (x))
++      || GET_CODE (x) == ADDRESSOF)
+     x = force_reg (Pmode, x);
+ 
+   /* Accept a QUEUED that refers to a REG
+--- gcc/recog.c.jj	2002-12-02 16:02:20.000000000 +0100
++++ gcc/recog.c	2003-10-30 17:21:58.000000000 +0100
+@@ -1050,7 +1050,11 @@ general_operand (op, mode)
+ 	return 0;
+ 
+       if (GET_CODE (y) == ADDRESSOF)
+-	return 1;
++	{
++	  rtx inner = XEXP (y, 0);
++	  enum machine_mode inner_mode = GET_MODE (inner);
++	  return ! (FLOAT_MODE_P (inner_mode) && inner_mode != mode);
++	}
+ 
+       /* Use the mem's mode, since it will be reloaded thus.  */
+       mode = GET_MODE (op);
+@@ -1345,8 +1349,12 @@ memory_address_p (mode, addr)
+      register rtx addr;
+ {
+   if (GET_CODE (addr) == ADDRESSOF)
+-    return 1;
+-  
++    {
++      rtx inner = XEXP (addr, 0);
++      enum machine_mode inner_mode = GET_MODE (inner);
++      return ! (FLOAT_MODE_P (inner_mode) && inner_mode != mode);
++    }
++
+   GO_IF_LEGITIMATE_ADDRESS (mode, addr, win);
+   return 0;
+ 
+--- gcc/testsuite/gcc.c-torture/compile/20031030-1.c.jj 2003-09-15 15:40:47.000000000 +0200
++++ gcc/testsuite/gcc.c-torture/compile/20031030-1.c	2003-10-30 17:20:44.000000000 +0100
+@@ -0,0 +1,7 @@
++double foo (double x)
++{
++  double df;
++
++  *(unsigned int*)&df = 0;
++  return ((double)(2.00000000000000000000e+00) * df);
++}

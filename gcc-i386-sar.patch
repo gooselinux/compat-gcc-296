@@ -1,0 +1,96 @@
+2001-01-16  Richard Henderson  <rth@redhat.com>
+
+	* config/i386/i386.md (ashr+compare patterns): Match CCGOCmode not
+	CCNOmode.
+
+--- gcc/config/i386/i386.md.jj	Wed Jan 17 14:37:54 2001
++++ gcc/config/i386/i386.md	Wed Jan 17 16:04:23 2001
+@@ -7485,7 +7485,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:SI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:SI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && (TARGET_PENTIUM || TARGET_PENTIUMPRO)
+    && ix86_binary_operator_ok (ASHIFTRT, SImode, operands)"
+   "sar{l}\\t%0"
+@@ -7506,7 +7506,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:SI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:SI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && ix86_binary_operator_ok (ASHIFTRT, SImode, operands)"
+   "@
+    sar{l}\\t{%2, %0|%0, %2}"
+@@ -7558,7 +7558,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:HI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:HI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && (TARGET_PENTIUM || TARGET_PENTIUMPRO)
+    && ix86_binary_operator_ok (ASHIFTRT, HImode, operands)"
+   "sar{w}\\t%0"
+@@ -7579,7 +7579,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:HI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:HI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && ix86_binary_operator_ok (ASHIFTRT, HImode, operands)"
+   "@
+    sar{w}\\t{%2, %0|%0, %2}"
+@@ -7631,7 +7631,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:QI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:QI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && (TARGET_PENTIUM || TARGET_PENTIUMPRO)
+    && ix86_binary_operator_ok (ASHIFTRT, QImode, operands)"
+   "sar{b}\\t%0"
+@@ -7652,7 +7652,7 @@
+ 	  (const_int 0)))
+    (set (match_operand:QI 0 "nonimmediate_operand" "=rm")
+ 	(ashiftrt:QI (match_dup 1) (match_dup 2)))]
+-  "ix86_match_ccmode (insn, CCNOmode)
++  "ix86_match_ccmode (insn, CCGOCmode)
+    && ix86_binary_operator_ok (ASHIFTRT, QImode, operands)"
+   "@
+    sar{b}\\t{%2, %0|%0, %2}"
+--- gcc/testsuite/gcc.c-torture/execute/20010116-1.c.jj	Wed Jan 17 16:11:45 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010116-1.c	Wed Jan 17 16:11:34 2001
+@@ -0,0 +1,32 @@
++/* Distilled from optimization/863.  */
++
++extern void abort (void);
++extern void exit (int);
++extern void ok (int);
++
++typedef struct
++{
++  int x, y, z;
++} Data;
++
++void find (Data *first, Data *last)
++{
++  int i;
++  for (i = (last - first) >> 2; i > 0; --i)
++    ok(i);
++  abort ();
++}
++
++void ok(int i)
++{
++  if (i != 1)
++    abort ();
++  exit (0);
++}
++
++int
++main ()
++{
++  Data DataList[4];
++  find (DataList + 0, DataList + 4);
++}

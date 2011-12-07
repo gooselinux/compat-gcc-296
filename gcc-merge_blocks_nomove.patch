@@ -1,0 +1,26 @@
+2000-08-20  Richard Henderson  <rth@redhat.com>
+
+	* flow.c (merge_blocks_nomove): Don't seek back past the bb note.
+
+2000-08-11  Richard Henderson  <rth@redhat.com>
+
+	* flow.c (merge_blocks_nomove): Be more careful about
+	locating the beginning of block A.
+
+--- gcc/flow.c.jj	Wed Mar  6 17:58:21 2002
++++ gcc/flow.c	Wed Mar 13 22:18:10 2002
+@@ -2181,9 +2181,11 @@ merge_blocks_nomove (a, b)
+     {
+       rtx prev;
+ 
+-      prev = prev_nonnote_insn (a_end);
+-      if (!prev) 
+-	prev = a->head;
++      for (prev = PREV_INSN (a_end); ; prev = PREV_INSN (prev))
++	if (GET_CODE (prev) != NOTE
++	    || NOTE_LINE_NUMBER (prev) == NOTE_INSN_BASIC_BLOCK
++	    || prev == a->head)
++	  break;
+ 
+       del_first = a_end;
+ 

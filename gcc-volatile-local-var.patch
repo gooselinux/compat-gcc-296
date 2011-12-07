@@ -1,0 +1,43 @@
+2000-11-22  Jakub Jelinek  <jakub@redhat.com>
+
+	* stmt.c (expand_decl): Set MEM_VOLATILE_P of stack temp for
+	volatile trees.
+
+	* gcc.c-torture/execute/ieee/20001122-1.c: New test.
+
+--- gcc/stmt.c.jj	Mon Nov 20 16:27:21 2000
++++ gcc/stmt.c	Wed Nov 22 13:03:05 2000
+@@ -3877,6 +3877,8 @@ expand_decl (decl)
+ 	}
+ 
+       DECL_RTL (decl) = assign_temp (TREE_TYPE (decl), 1, 1, 1);
++      if (TREE_THIS_VOLATILE (decl))
++	MEM_VOLATILE_P (DECL_RTL (decl)) = 1;
+ 
+       /* Set alignment we actually gave this decl.  */
+       DECL_ALIGN (decl) = (DECL_MODE (decl) == BLKmode ? BIGGEST_ALIGNMENT
+--- gcc/testsuite/gcc.c-torture/execute/ieee/20001122-1.c.jj	Wed Nov 22 13:19:38 2000
++++ gcc/testsuite/gcc.c-torture/execute/ieee/20001122-1.c	Wed Nov 22 13:22:02 2000
+@@ -0,0 +1,22 @@
++volatile double a, *p;
++
++int main ()
++{
++  double c, d;
++  volatile double b;
++
++  d = 1.0;
++  p = &b;
++  do
++  {
++    c = d;
++    d = c * 0.5;
++    b = 1 + d;
++  } while (b != 1.0);
++
++  a = 1.0 + c;
++  if (a == 1.0)
++    abort();
++
++  exit (0);
++}

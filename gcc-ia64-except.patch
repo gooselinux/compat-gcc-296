@@ -1,0 +1,163 @@
+2001-04-24  Jakub Jelinek  <jakub@redhat.com>
+
+	* libgcc2.c (ia64_throw_helper): Return bsp of the frame below
+	target frame.
+	(__throw): Use it.
+
+	* testsuite/g++.old-deja/g++.eh/ia64-1.C: New test.
+
+--- gcc/libgcc2.c.jj	Mon Apr 23 08:40:35 2001
++++ gcc/libgcc2.c	Tue Apr 24 09:40:52 2001
+@@ -4045,7 +4045,7 @@ __ia64_personality_v1 (void *pc, old_exc
+   return (void *) 0;
+ }
+ 
+-static void
++static void *
+ ia64_throw_helper (ia64_frame_state *throw_frame, ia64_frame_state *caller,
+ 		   void *throw_bsp, void *throw_sp)
+ {
+@@ -4054,7 +4054,7 @@ ia64_throw_helper (ia64_frame_state *thr
+   void *pc, *handler = NULL;
+   void *pc_base;
+   int frame_count;
+-  void *bsp;
++  void *bsp, *ret;
+ 
+   __builtin_ia64_flushrs ();      /*  Make the local register stacks available.  */
+ 
+@@ -4114,6 +4114,7 @@ ia64_throw_helper (ia64_frame_state *thr
+      of each previous frame until we get to the one before we're 
+      throwing back to.  */
+   memcpy (caller, throw_frame, sizeof (*caller));
++  ret = throw_frame->my_bsp;
+   for ( ; frame_count > 0; frame_count--)
+     {
+       pc = __get_real_reg_value (&caller->rp) - 1;
+@@ -4124,14 +4125,19 @@ ia64_throw_helper (ia64_frame_state *thr
+       /* We don't want to copy any saved register from the 
+          target destination, but we do want to load up it's frame.  */
+       if (frame_count > 1)
+-	__copy_saved_reg_state (throw_frame, caller);
++	{
++	  __copy_saved_reg_state (throw_frame, caller);
++	  ret = bsp;
++	}
+     }
+ 
+   /* Set return address of the throw frame to the handler. */
+   __set_real_reg_value (&throw_frame->rp, handler);
+ 
+   /* TODO, do we need to do anything to make the values we wrote 'stick'? */
+-  /* DO we need to go through the whole loadrs seqeunce?  */
++  /* DO we need to go through the whole loadrs sequence?  */
++
++  return ret;
+ }
+ 
+ 
+@@ -4142,7 +4148,7 @@ __throw ()
+   struct eh_context *eh = (*get_eh_context) ();
+   ia64_frame_state my_frame;
+   ia64_frame_state originator;	/* For the context handler is in.  */
+-  void *bsp, *tmp_bsp;
++  void *bsp;
+   long offset;
+ 
+   /* This is required for C++ semantics.  We must call terminate if we
+@@ -4160,17 +4166,11 @@ __throw ()
+   /* Get the value of ar.bsp while we're here.  */
+ 
+   bsp = __builtin_ia64_bsp ();
+-  ia64_throw_helper (&my_frame, &originator, bsp, stack_pointer);
+-
+-  /* Now we have to fudge the bsp by the amount in our (__throw)
+-     frame marker, since the return is going to adjust it by that much. */
++  bsp = ia64_throw_helper (&my_frame, &originator, bsp, stack_pointer);
+ 
+-  tmp_bsp = __calc_caller_bsp ((long)__get_real_reg_value (&my_frame.pfs), 
+-			     my_frame.my_bsp);
+-  offset = (char *)my_frame.my_bsp - (char *)tmp_bsp;
+-  tmp_bsp = (char *)originator.my_bsp + offset;
++  offset = (char *)bsp - (char *)originator.my_bsp;
+ 
+-  __builtin_eh_return (tmp_bsp, offset, originator.my_sp);
++  __builtin_eh_return (bsp, offset, originator.my_sp);
+ 
+   /* The return address was already set by throw_helper.  */
+ }
+--- gcc/testsuite/g++.old-deja/g++.eh/ia64-1.C.jj	Sat Mar 24 04:35:12 2001
++++ gcc/testsuite/g++.old-deja/g++.eh/ia64-1.C	Mon Apr 23 18:08:00 2001
+@@ -0,0 +1,72 @@
++// Special g++ Options: -O2
++
++#include <exception>
++
++using namespace std;
++
++extern "C" void abort();
++
++int i0, i1, i2, i3, i4, i5, i6, i7, i8, i9;
++int j0, j1, j2, j3, j4, j5, j6, j7, j8, j9;
++int k0, k1, k2, k3, k4, k5, k6, k7, k8, k9;
++int l0, l1, l2, l3, l4, l5, l6, l7, l8, l9;
++#define A(x,y,n) register int *x##n = &y##n;
++#define B(x,y) \
++  A(x,y,0) A(x,y,1) A(x,y,2) A(x,y,3) A(x,y,4) \
++  A(x,y,5) A(x,y,6) A(x,y,7) A(x,y,8) A(x,y,9)
++#define C(x,n) asm volatile ("" : "=r" (x##n) : "0" (x##n));
++#define D(x) \
++  C(x,0) C(x,1) C(x,2) C(x,3) C(x,4) \
++  C(x,5) C(x,6) C(x,7) C(x,8) C(x,9)
++#define E(x,y,n) if (x##n != &y##n) abort ();
++#define F(x,y) \
++  E(x,y,0) E(x,y,1) E(x,y,2) E(x,y,3) E(x,y,4) \
++  E(x,y,5) E(x,y,6) E(x,y,7) E(x,y,8) E(x,y,9)
++
++void bar(long a0, long a1, long a2, long a3, long a4)
++{
++}
++
++void foo(long a0, long a1, long a2, long a3, long a4)
++{
++  A(p,l,0) A(p,l,1) A(p,l,2)
++  C(p,0) C(p,1) C(p,2)
++  bar (0, 1, 2, 3, 4);
++  if (a0 == 0)
++    throw exception();
++  C(p,0) C(p,1) C(p,2)
++  E(p,l,0) E(p,l,1) E(p,l,2)
++}
++
++void test(void)
++{
++  A(p,l,0) A(p,l,1) A(p,l,2) A(p,l,3) A(p,l,4) A(p,l,5) A(p,l,6)
++  C(p,0) C(p,1) C(p,2) C(p,3) C(p,4) C(p,5) C(p,6)
++  try {
++    foo(0, 1, 2, 3, 4);
++  } catch (exception) {}
++  C(p,0) C(p,1) C(p,2) C(p,3) C(p,4) C(p,5) C(p,6)
++  E(p,l,0) E(p,l,1) E(p,l,2) E(p,l,3) E(p,l,4) E(p,l,5) E(p,l,6)
++}
++
++int main()
++{
++  B(x,i)
++  B(y,j)
++  B(z,k)
++  A(p,l,0) A(p,l,1) A(p,l,2) A(p,l,3)
++  D(x)
++  D(y)
++  D(z)
++  C(p,0) C(p,1) C(p,2) C(p,3)
++  test();
++  D(x)
++  D(y)
++  D(z)
++  C(p,0) C(p,1) C(p,2) C(p,3)
++  F(x,i)
++  F(y,j)
++  F(z,k)
++  E(p,l,0) E(p,l,1) E(p,l,2) E(p,l,3)
++  return 0;
++}

@@ -1,0 +1,43 @@
+2001-03-26  Jakub Jelinek  <jakub@redhat.com>
+
+	* recog.c (validate_replace_rtx_1): Instead of aborting just make
+	sure the change won't be validated.
+
+	* gcc.c-torture/compile/20010326-1.c: New test.
+
+--- gcc/recog.c.jj	Mon Mar 26 16:32:11 2001
++++ gcc/recog.c	Mon Mar 26 18:34:32 2001
+@@ -558,7 +558,13 @@ validate_replace_rtx_1 (loc, from, to, o
+ 		enum machine_mode inner_mode = GET_MODE (from);
+ 
+ 		if (GET_MODE_CLASS (mode) != MODE_INT)
+-		  abort ();
++		  {
++		    /* Substitute in something that we know won't be
++		       recognized.  */
++		    to = gen_rtx_CLOBBER (GET_MODE (x), const0_rtx);
++		    validate_change (object, loc, to, 1);
++		    return;
++		  }
+ 
+ 		if (BYTES_BIG_ENDIAN || WORDS_BIG_ENDIAN)
+ 		  {
+--- gcc/testsuite/gcc.c-torture/compile/20010326-1.c.jj	Mon Mar 26 18:35:16 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010326-1.c	Mon Mar 26 18:36:51 2001
+@@ -0,0 +1,16 @@
++float d;
++int e, f;
++
++void foo (void)
++{
++  struct { float u, v; } a = {0.0, 0.0};
++  float b;
++  int c;
++
++  c = e;
++  if (c == 0)
++    c = f;
++  b = d;
++  if (a.v < b)
++    a.v = b;
++}

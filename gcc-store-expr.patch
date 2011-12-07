@@ -1,0 +1,225 @@
+2001-03-12  Jakub Jelinek  <jakub@redhat.com>
+
+	* expr.c (store_expr): Add dont_store_target.  If temp is already in
+	target before copying to reg, don't store it into target again.
+
+	* g++.old-deja/g++.other/rh1.C: New test.
+	* g++.old-deja/g++.other/rh2.C: New test.
+
+--- gcc/expr.c.jj	Fri Mar  9 19:46:52 2001
++++ gcc/expr.c	Mon Mar 12 13:41:38 2001
+@@ -3753,6 +3753,7 @@ store_expr (exp, target, want_value)
+ {
+   register rtx temp;
+   int dont_return_target = 0;
++  int dont_store_target = 0;
+ 
+   if (TREE_CODE (exp) == COMPOUND_EXPR)
+     {
+@@ -3823,7 +3824,15 @@ store_expr (exp, target, want_value)
+     {
+       temp = expand_expr (exp, target, GET_MODE (target), 0);
+       if (GET_MODE (temp) != BLKmode && GET_MODE (temp) != VOIDmode)
+-	temp = copy_to_reg (temp);
++	{
++	  /* If TEMP is already in the desired TARGET, only copy it from
++	     memory and don't store it there again.  */
++	  if (temp == target
++	      || (rtx_equal_p (temp, target)
++		  && ! side_effects_p (temp) && ! side_effects_p (target)))
++	    dont_store_target = 1;
++	  temp = copy_to_reg (temp);
++	}
+       dont_return_target = 1;
+     }
+   else if (GET_CODE (target) == SUBREG && SUBREG_PROMOTED_VAR_P (target))
+@@ -3953,7 +3962,8 @@ store_expr (exp, target, want_value)
+   if ((! rtx_equal_p (temp, target)
+        || (temp != target && (side_effects_p (temp)
+ 			      || side_effects_p (target))))
+-      && TREE_CODE (exp) != ERROR_MARK)
++      && TREE_CODE (exp) != ERROR_MARK
++      && ! dont_store_target)
+     {
+       target = protect_from_queue (target, 1);
+       if (GET_MODE (temp) != GET_MODE (target)
+--- gcc/testsuite/g++.old-deja/g++.other/rh1.C	Thu Aug 24 11:00:32 2000
++++ gcc/testsuite/g++.old-deja/g++.other/rh1.C	Fri Mar  9 14:21:50 2001
+@@ -0,0 +1,87 @@
++// Skip if not target: i?86-*-*
++// Special g++ Options: -mcpu=i686 -O2 -fpic
++class G {};
++
++struct N {
++  N *a;
++};
++
++struct V {
++  typedef N *W;
++  W *m, *n;
++  int s() const { return int(n - m); }
++  const W &operator[](int x) const { return *(m + x); }
++};
++
++struct H;
++
++struct J {
++  N *c;
++  H *d;
++  J(N *x, H *y) : c(x), d(y) {}
++};
++
++struct K {
++  const N *c;
++  const H *d;
++  K(const N *x, const H *y) : c(x), d(y) {}
++  K(const J &x) : c(x.c), d(x.d) {}
++};
++
++struct H {
++  V e;
++  int f;
++
++  J u()
++  {
++    for (int x = 0; x < e.s(); ++x)
++      if (e[x])
++        return J(e[x], this);
++    return v();
++  }
++  J v() { return J((N*)64, this); }
++};
++
++struct I {
++  H d;
++  J u() { return d.u(); }
++  J v() { return d.v(); }
++};
++
++struct bar {
++  virtual ~bar() {}
++};
++
++struct E {
++  K g;
++  E(K x) : g(x) {}
++};
++
++struct foo : public bar {
++  K h;
++  E i;
++  foo(const K x, const E &y) : h(x), i(y) {}
++};
++
++struct A {
++  I *l;
++  foo *baz() const;
++};
++
++foo *A::baz() const
++{
++  return new foo(l->u(), E(l->v()));
++}
++
++A x;
++I i;
++foo *f;
++
++int main ()
++{
++  x.l = &i;
++  f = x.baz();
++  if (f->h.c != f->i.g.c || f->h.d != f->i.g.d)
++    return 1;
++  return 0;
++}
+--- gcc/testsuite/g++.old-deja/g++.other/rh2.C	Thu Aug 24 11:00:32 2000
++++ gcc/testsuite/g++.old-deja/g++.other/rh2.C	Fri Mar  9 14:21:50 2001
+@@ -0,0 +1,87 @@
++// Skip if not target: i?86-*-*
++// Special g++ Options: -mcpu=i686 -O2
++class G {};
++
++struct N {
++  N *a;
++};
++
++struct V {
++  typedef N *W;
++  W *m, *n;
++  int s() const { return int(n - m); }
++  const W &operator[](int x) const { return *(m + x); }
++};
++
++struct H;
++
++struct J {
++  N *c;
++  H *d;
++  J(N *x, H *y) : c(x), d(y) {}
++};
++
++struct K {
++  const N *c;
++  const H *d;
++  K(const N *x, const H *y) : c(x), d(y) {}
++  K(const J &x) : c(x.c), d(x.d) {}
++};
++
++struct H {
++  V e;
++  int f;
++
++  J u()
++  {
++    for (int x = 0; x < e.s(); ++x)
++      if (e[x])
++        return J(e[x], this);
++    return v();
++  }
++  J v() { return J((N*)64, this); }
++};
++
++struct I {
++  H d;
++  J u() { return d.u(); }
++  J v() { return d.v(); }
++};
++
++struct bar {
++  virtual ~bar() {}
++};
++
++struct E {
++  K g;
++  E(K x) : g(x) {}
++};
++
++struct foo : public bar {
++  K h;
++  E i;
++  foo(const K x, const E &y) : h(x), i(y) {}
++};
++
++struct A {
++  I *l;
++  foo *baz() const;
++};
++
++foo *A::baz() const
++{
++  return new foo(l->u(), E(l->v()));
++}
++
++A x;
++I i;
++foo *f;
++
++int main ()
++{
++  x.l = &i;
++  f = x.baz();
++  if (f->h.c != f->i.g.c || f->h.d != f->i.g.d)
++    return 1;
++  return 0;
++}

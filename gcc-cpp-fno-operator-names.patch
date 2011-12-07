@@ -1,0 +1,78 @@
+2000-12-15  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c (cpp_options): Pass -fno-operator-names.
+	* cpplib.h (struct cpp_options): Add operator_names.
+	* cppinit.c (cpp_create_reader): Initialize it.
+	(initialize_builtins): If -fno-operator-names, don't add
+	C++ alternate operator names.
+	(COMMAND_LINE_OPTIONS): Add -fno-operator-names.
+	(cpp_handle_option): Clear operator_names.
+
+--- gcc/gcc.c.jj	Thu Dec 14 00:17:35 2000
++++ gcc/gcc.c	Fri Dec 15 17:04:20 2000
+@@ -562,6 +562,7 @@ static const char *cpp_options =
+  %{fshort-wchar:-D__WCHAR_TYPE__=short\\ unsigned\\ int}\
+  %{fshow-column} %{fno-show-column}\
+  %{fleading-underscore} %{fno-leading-underscore}\
++ %{fno-operator-names}\
+  %{g*} %{W*} %{w} %{pedantic*} %{H} %{d*} %C %{D*} %{U*} %{i*} %Z %i\
+  %{E:%W{o*}}%{M:%W{o*}}%{MM:%W{o*}}";
+ 
+--- gcc/cpplib.h.jj	Mon Jul 24 11:04:17 2000
++++ gcc/cpplib.h	Fri Dec 15 17:03:45 2000
+@@ -424,6 +424,9 @@ struct cpp_options
+ 
+   /* Print column number in error messages.  */
+   unsigned char show_column;
++
++  /* Treat C++ alternate operator names special.  */
++  unsigned char operator_names;
+ };
+ 
+ /* A cpp_reader encapsulates the "state" of a pre-processor run.
+--- gcc/cppinit.c.jj	Thu Dec 14 00:17:37 2000
++++ gcc/cppinit.c	Fri Dec 15 17:06:21 2000
+@@ -427,6 +427,7 @@ cpp_reader_init (pfile)
+   CPP_OPTION (pfile, discard_comments) = 1;
+   CPP_OPTION (pfile, show_column) = 1;
+   CPP_OPTION (pfile, tabstop) = 8;
++  CPP_OPTION (pfile, operator_names) = 1;
+ 
+   CPP_OPTION (pfile, pending) =
+     (struct cpp_pending *) xcalloc (1, sizeof (struct cpp_pending));
+@@ -565,6 +566,7 @@ static const struct builtin builtin_arra
+ #undef B
+ #undef C
+ #undef X
++#undef O
+ #define builtin_array_end \
+  builtin_array + sizeof(builtin_array)/sizeof(struct builtin)
+ 
+@@ -580,6 +582,9 @@ initialize_builtins (pfile)
+       if (b->flags & CPLUS && ! CPP_OPTION (pfile, cplusplus))
+ 	continue;
+ 
++      if (b->type == T_OPERATOR && ! CPP_OPTION (pfile, operator_names))
++	continue;
++
+       if (b->type == T_MACRO)
+ 	{
+ 	  const char *val;
+@@ -1044,6 +1049,7 @@ new_pending_directive (pend, text, handl
+   DEF_OPT("d",                        no_arg, OPT_d)                          \
+   DEF_OPT("fleading-underscore",      0,      OPT_fleading_underscore)        \
+   DEF_OPT("fno-leading-underscore",   0,      OPT_fno_leading_underscore)     \
++  DEF_OPT("fno-operator-names",       0,      OPT_fno_operator_names)         \
+   DEF_OPT("fno-preprocessed",         0,      OPT_fno_preprocessed)           \
+   DEF_OPT("fno-show-column",          0,      OPT_fno_show_column)            \
+   DEF_OPT("fpreprocessed",            0,      OPT_fpreprocessed)              \
+@@ -1254,6 +1260,9 @@ cpp_handle_option (pfile, argc, argv)
+ 	  break;
+ 	case OPT_fno_leading_underscore:
+ 	  user_label_prefix = "";
++	  break;
++	case OPT_fno_operator_names:
++	  CPP_OPTION (pfile, operator_names) = 0;
+ 	  break;
+ 	case OPT_fpreprocessed:
+ 	  CPP_OPTION (pfile, preprocessed) = 1;

@@ -1,0 +1,218 @@
+2001-01-04  Jakub Jelinek  <jakub@redhat.com>
+
+	* tradcpp.c (deps_file, print_deps_missing_files): New variables.
+	(main): Handle -MG, -MD, -MMD.  Bail out if -MG is given without -M
+	or -MM.
+	(do_include): Handle missing headers like cpp0.
+	* cppfiles.c (_cpp_execute_include): Don't prefix absolute header
+	paths with first include pathname.  Don't strcat to uninitialized
+	string.
+
+--- gcc/tradcpp.c.jj	Tue Dec 19 09:21:54 2000
++++ gcc/tradcpp.c	Thu Jan  4 13:55:14 2001
+@@ -49,6 +49,16 @@ int put_out_comments = 0;
+ 
+ int print_deps = 0;
+ 
++/* File name which deps are being written to.  This is 0 if deps are
++   being written to stdout.  */
++
++const char *deps_file = 0;
++
++/* Nonzero if missing .h files in -M output are assumed to be
++   generated files and not errors.  */
++
++int print_deps_missing_files = 0;
++       
+ /* Nonzero means don't output line number information.  */
+ 
+ int no_line_commands;
+@@ -592,11 +602,32 @@ main (argc, argv)
+ 	break;
+ 
+       case 'M':
+-	if (!strcmp (argv[i], "-M"))
+-	  print_deps = 2;
+-	else if (!strcmp (argv[i], "-MM"))
+-	  print_deps = 1;
+-	inhibit_output = 1;
++	{
++	  char *p = NULL;
++
++	  if (!strncmp (argv[i], "-MD", 3)) {
++	    p = argv[i] + 3;
++	    print_deps = 2;
++	  } else if (!strncmp (argv[i], "-MMD", 4)) {
++	    p = argv[i] + 4;
++	    print_deps = 1;
++	  } else if (!strcmp (argv[i], "-M")) {
++	    print_deps = 2;
++	    inhibit_output = 1;
++	  } else if (!strcmp (argv[i], "-MM")) {
++	    print_deps = 1;
++	    inhibit_output = 1;
++	  } else if (!strcmp (argv[i], "-MG"))
++	    print_deps_missing_files = 1;
++	  if (p) {
++	    if (*p)
++	      deps_file = p;
++	    else if (i + 1 == argc)
++	      fatal ("Filename missing after %s option", argv[i]);
++	    else
++	      deps_file = argv[++i];
++	  }
++	}
+ 	break;
+ 
+       case 'd':
+@@ -701,6 +732,9 @@ main (argc, argv)
+     }
+   }
+ 
++  if (print_deps_missing_files && (!print_deps || !inhibit_output))
++    fatal ("-MG must be specified with one of -M or -MM");
++
+   if (user_label_prefix == 0)
+     user_label_prefix = USER_LABEL_PREFIX;
+ 
+@@ -792,7 +826,6 @@ main (argc, argv)
+     {
+       char *spec = getenv ("DEPENDENCIES_OUTPUT");
+       char *s;
+-      char *output_file;
+ 
+       if (spec == 0)
+ 	{
+@@ -806,28 +839,33 @@ main (argc, argv)
+       s = strchr (spec, ' ');
+       if (s)
+ 	{
++	  char *out_file;
++
+ 	  deps_target = s + 1;
+-	  output_file = (char *) xmalloc (s - spec + 1);
+-	  memcpy (output_file, spec, s - spec);
+-	  output_file[s - spec] = 0;
++	  out_file = (char *) xmalloc (s - spec + 1);
++	  memcpy (out_file, spec, s - spec);
++	  out_file[s - spec] = 0;
++	  deps_file = out_file;
+ 	}
+       else
+ 	{
+ 	  deps_target = 0;
+-	  output_file = spec;
++	  deps_file = spec;
+ 	}
+-      
+-      deps_stream = fopen (output_file, "a");
+-      if (deps_stream == 0)
+-	pfatal_with_name (output_file);
+     }
+-  /* If the -M option was used, output the deps to standard output.  */
+-  else if (print_deps)
+-    deps_stream = stdout;
+ 
+   /* For -M, print the expected object file name
+      as the target of this Make-rule.  */
+   if (print_deps) {
++
++    if (deps_file) {
++      deps_stream = fopen (deps_file, "a");
++      if (deps_stream == 0)
++	pfatal_with_name (deps_file);
++    } else
++      /* If the -M option was used, output the deps to standard output.  */
++      deps_stream = stdout;
++
+     deps_allocated_size = 200;
+     deps_buffer = (char *) xmalloc (deps_allocated_size);
+     deps_buffer[0] = 0;
+@@ -2300,19 +2338,38 @@ get_filename:
+   if (f < 0) {
+     strncpy (fname, (char *)fbeg, flen);
+     fname[flen] = 0;
+-    error_from_errno (fname);
++    if (print_deps_missing_files
++	&& print_deps > (system_header_p || (system_include_depth > 0))) {
+ 
+-    /* For -M, add this file to the dependencies.  */
+-    if (print_deps > (system_header_p || (system_include_depth > 0))) {
+-      if (system_header_p)
+-	warning ("nonexistent file <%.*s> omitted from dependency output",
+-		 fend - fbeg, fbeg);
++      /* If requested as a system header, assume it belongs in
++	 the first system header directory. */
++      if (first_bracket_include)
++	stackp = first_bracket_include;
+       else
+-	{
+-	  deps_output ((const char *)fbeg, fend - fbeg);
+-	  deps_output (" ", 0);
+-	}
+-    }
++	stackp = include;
++
++      if (!system_header_p || *fbeg == '/' || !stackp->fname)
++	deps_output ((const char *)fbeg, fend - fbeg);
++      else {
++	char *p;
++	int len = strlen(stackp->fname);
++
++	p = (char *) alloca (len + fend - fbeg + 2);
++	strcpy (p, stackp->fname);
++	p[len++] = '/';
++	memcpy (p + len, fbeg, fend - fbeg);
++	len += fend - fbeg;
++	deps_output (p, len);
++      }
++      deps_output (" ", 0);
++
++    } else if (print_deps
++	       && print_deps <= (system_header_p
++				 || (system_include_depth > 0)))
++      warning ("No include path in which to find %.*s", fend - fbeg, fbeg);
++    else
++      error_from_errno (fname);
++
+   } else {
+ 
+     /* Check to see if this include file is a once-only include file.
+--- gcc/cppfiles.c.jj	Mon Jul 17 10:26:12 2000
++++ gcc/cppfiles.c	Thu Jan  4 14:01:21 2001
+@@ -471,12 +471,14 @@ _cpp_execute_include (pfile, f, len, no_
+   if (CPP_OPTION (pfile, print_deps_missing_files)
+       && PRINT_THIS_DEP (pfile, angle_brackets))
+     {
+-      if (!angle_brackets)
++      if (!angle_brackets || *fname == '/')
+ 	deps_add_dep (pfile->deps, fname);
+       else
+ 	{
+ 	  char *p;
+ 	  struct file_name_list *ptr;
++	  int len = strlen (ptr->name);
++
+ 	  /* If requested as a system header, assume it belongs in
+ 	     the first system header directory. */
+ 	  if (CPP_OPTION (pfile, bracket_include))
+@@ -484,14 +486,13 @@ _cpp_execute_include (pfile, f, len, no_
+ 	  else
+ 	    ptr = CPP_OPTION (pfile, quote_include);
+ 
+-	  p = (char *) alloca (strlen (ptr->name)
+-			       + strlen (fname) + 2);
+-	  if (*ptr->name != '\0')
++	  p = (char *) alloca (len + strlen (fname) + 2);
++	  if (len)
+ 	    {
+-	      strcpy (p, ptr->name);
+-	      strcat (p, "/");
++	      memcpy (p, ptr->name, len);
++	      p[len++] = '/';
+ 	    }
+-	  strcat (p, fname);
++	  strcpy (p + len, fname);
+ 	  _cpp_simplify_pathname (p);
+ 	  deps_add_dep (pfile->deps, p);
+ 	}

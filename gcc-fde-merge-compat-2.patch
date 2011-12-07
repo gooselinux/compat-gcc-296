@@ -1,0 +1,65 @@
+2002-09-05  Jason Merrill  <jason@redhat.com>
+            Jakub Jelinek  <jakub@redhat.com>
+            Vladimir Makarov  <vmakarov@redhat.com>
+
+	* frame-dwarf2.c (fde_compare): Also order on the FDE address.
+	* frame.c (fde_merge): Fix code to overwrite duplicate FDEs.
+
+--- gcc/frame-dwarf2.c.jj	2002-07-04 00:26:10.000000000 +0200
++++ gcc/frame-dwarf2.c	2002-09-11 19:41:26.000000000 +0200
+@@ -223,13 +223,17 @@ static inline unsigned long
+ read_8byte (void *p)
+ { union unaligned *up = p; return up->b8; }
+ 
+-/* Ordering function for FDEs.  Functions can't overlap, so we just compare
+-   their starting addresses.  */
++/* Ordering function for FDEs.  Functions can't overlap, but with older
++   versions of binutils we could get multiple FDEs for the same function.
++   In such cases, the first one by address is the one we want.  */
+ 
+ static inline saddr
+ fde_compare (fde *x, fde *y)
+ {
+-  return (saddr)x->pc_begin - (saddr)y->pc_begin;
++  saddr ret = (saddr)x->pc_begin - (saddr)y->pc_begin;
++  if (! ret)
++    ret = (saddr)x - (saddr)y;
++  return ret;
+ }
+ 
+ /* Return the address of the FDE after P.  */
+--- gcc/frame.c.jj	2002-07-04 00:26:19.000000000 +0200
++++ gcc/frame.c	2002-09-11 19:41:26.000000000 +0200
+@@ -205,17 +205,6 @@ fde_merge (fde_vector *v1, const fde_vec
+       i1 = v1->count;
+       do {
+         i2--;
+-        if (fde2 != NULL && fde_compare (v2->array[i2], fde2) == 0)
+-	  {
+-	    /* Some linkers (e.g. 2.10.91.0.2 or 2.11.92.0.8) resolve
+-	       section relative relocations against removed linkonce
+-	       section to corresponding location in the output linkonce
+-	       section. Always use the earliest fde in that case.  */
+-	    fde2 = v2->array[i2];
+-	    v1->array[i1+i2+1] = fde2;
+-	    v1->array[i1+i2] = fde2;
+-	    continue;
+-	  }
+         fde2 = v2->array[i2];
+         while (i1 > 0 && fde_compare (v1->array[i1-1], fde2) > 0)
+           {
+@@ -226,6 +215,14 @@ fde_merge (fde_vector *v1, const fde_vec
+       } while (i2 > 0);
+       v1->count += v2->count;
+     }
++
++  /* Some linkers (e.g. 2.10.91.0.2 or 2.11.92.0.8) resolve
++     section relative relocations against removed linkonce
++     section to corresponding location in the output linkonce
++     section. Always use the earliest fde in that case.  */
++  for (i1 = 0; i1+1 < v1->count; ++i1)
++    if (v1->array[i1]->pc_begin == v1->array[i1+1]->pc_begin)
++      v1->array[i1+1] = v1->array[i1];
+ }
+ 
+ static fde **

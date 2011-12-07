@@ -1,0 +1,327 @@
+--- gcc/cpperror.c	Fri Jan 26 11:56:09 2001
++++ gcc/cpperror.c	Fri Jan 26 12:32:18 2001
+@@ -23,6 +23,7 @@ Foundation, 59 Temple Place - Suite 330,
+  You are forbidden to forbid anyone else to use, share and improve
+  what you give them.   Help stamp out software-hoarding!  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/cppexp.c	Mon Jan 22 13:58:05 2001
++++ gcc/cppexp.c	Fri Jan 26 12:32:30 2001
+@@ -19,7 +19,8 @@ Foundation, 59 Temple Place - Suite 330,
+ Boston, MA 02111-1307, USA.  */
+ 
+ /* Parse a C expression from text in a string  */
+-   
++
++#include <safe-ctype.h>   
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/cppfiles.c	Tue Jan 23 20:40:38 2001
++++ gcc/cppfiles.c	Fri Jan 26 12:32:41 2001
+@@ -20,6 +20,7 @@ You should have received a copy of the G
+ along with this program; if not, write to the Free Software
+ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/cpphash.c	Sun Nov 12 22:32:41 2000
++++ gcc/cpphash.c	Fri Jan 26 12:32:51 2001
+@@ -23,6 +23,7 @@ Foundation, 59 Temple Place - Suite 330,
+  You are forbidden to forbid anyone else to use, share and improve
+  what you give them.   Help stamp out software-hoarding!  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/cppinit.c	Tue Jan 23 20:41:52 2001
++++ gcc/cppinit.c	Fri Jan 26 13:20:49 2001
+@@ -19,6 +19,7 @@ You should have received a copy of the G
+ along with this program; if not, write to the Free Software
+ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+@@ -509,7 +510,7 @@ cpp_create_reader (lang)
+   CPP_OPTION (pfile, discard_comments) = 1;
+   CPP_OPTION (pfile, show_column) = 1;
+   CPP_OPTION (pfile, tabstop) = 8;
+-  CPP_OPTION (pfile, operator_names) = 1;
++  CPP_OPTION (pfile, operator_names) = 0;
+ 
+   CPP_OPTION (pfile, pending) =
+     (struct cpp_pending *) xcalloc (1, sizeof (struct cpp_pending));
+@@ -1068,6 +1069,7 @@ new_pending_directive (pend, text, handl
+   DEF_OPT("fno-operator-names",       0,      OPT_fno_operator_names)         \
+   DEF_OPT("fno-preprocessed",         0,      OPT_fno_preprocessed)           \
+   DEF_OPT("fno-show-column",          0,      OPT_fno_show_column)            \
++  DEF_OPT("foperator-names",          0,      OPT_foperator_names)            \
+   DEF_OPT("fpreprocessed",            0,      OPT_fpreprocessed)              \
+   DEF_OPT("fshow-column",             0,      OPT_fshow_column)               \
+   DEF_OPT("ftabstop=",                no_num, OPT_ftabstop)                   \
+@@ -1264,6 +1266,9 @@ cpp_handle_option (pfile, argc, argv)
+ 	  break;
+ 	case OPT_fno_operator_names:
+ 	  CPP_OPTION (pfile, operator_names) = 0;
++	  break;
++	case OPT_foperator_names:
++	  CPP_OPTION (pfile, operator_names) = 1;
+ 	  break;
+ 	case OPT_fpreprocessed:
+ 	  CPP_OPTION (pfile, preprocessed) = 1;
+--- gcc/cpplex.c	Tue Dec 19 12:01:13 2000
++++ gcc/cpplex.c	Fri Jan 26 12:33:12 2001
+@@ -34,6 +34,7 @@ Foundation, 59 Temple Place - Suite 330,
+    and changes to the remaining routines would probably only be needed
+    if they process a backslash.  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/cpplib.c	Thu Jan 18 12:09:01 2001
++++ gcc/cpplib.c	Fri Jan 26 12:33:21 2001
+@@ -19,6 +19,7 @@ You should have received a copy of the G
+ along with this program; if not, write to the Free Software
+ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ 
+--- gcc/cppmacro.c	Mon Jan 22 13:58:06 2001
++++ gcc/cppmacro.c	Fri Jan 26 12:33:41 2001
+@@ -23,6 +23,7 @@ Foundation, 59 Temple Place - Suite 330,
+  You are forbidden to forbid anyone else to use, share and improve
+  what you give them.   Help stamp out software-hoarding!  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "intl.h"		/* for _("<command line>") below.  */
+--- gcc/cppmain.c	Wed Jan 17 13:35:53 2001
++++ gcc/cppmain.c	Fri Jan 26 12:33:48 2001
+@@ -21,6 +21,7 @@ Foundation, 59 Temple Place - Suite 330,
+  You are forbidden to forbid anyone else to use, share and improve
+  what you give them.   Help stamp out software-hoarding!  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "cpplib.h"
+--- gcc/tradcif.c	Tue Dec 19 13:24:44 2000
++++ gcc/tradcif.c	Fri Jan 26 12:43:21 2001
+@@ -20,6 +20,7 @@
+ 
+ #line 24 "tradcif.y"
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "defaults.h"
+--- gcc/tradcif.y	Tue Dec 19 12:01:20 2000
++++ gcc/tradcif.y	Fri Jan 26 12:43:13 2001
+@@ -22,6 +22,7 @@ Foundation, 59 Temple Place - Suite 330,
+ /* Parse a C expression from text in a string  */
+    
+ %{
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "defaults.h"
+--- gcc/tradcpp.c	Tue Jan 23 19:25:08 2001
++++ gcc/tradcpp.c	Fri Jan 26 12:35:24 2001
+@@ -19,6 +19,7 @@ You should have received a copy of the G
+ along with this program; if not, write to the Free Software
+ Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+ 
++#include <safe-ctype.h>
+ #include "config.h"
+ #include "system.h"
+ #include "version.h"
+--- gcc/cppulp.c.jj	Mon Mar  6 18:37:39 2000
++++ gcc/cppulp.c	Fri Jan 26 12:14:45 2001
+@@ -1,27 +0,0 @@
+-/* CPP Library.
+-   Copyright (C) 1986, 1987, 1989, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
+-   1999 Free Software Foundation, Inc.
+-   Contributed by Per Bothner, 1994-95.
+-   Based on CCCP program by Paul Rubin, June 1986
+-   Adapted to ANSI C, Richard Stallman, Jan 1987
+-
+-This program is free software; you can redistribute it and/or modify it
+-under the terms of the GNU General Public License as published by the
+-Free Software Foundation; either version 2, or (at your option) any
+-later version.
+-
+-This program is distributed in the hope that it will be useful,
+-but WITHOUT ANY WARRANTY; without even the implied warranty of
+-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-GNU General Public License for more details.
+-
+-You should have received a copy of the GNU General Public License
+-along with this program; if not, write to the Free Software
+-Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
+-
+-#include "config.h"
+-#include "system.h"
+-
+-#include "output.h"
+-
+-const char *user_label_prefix = 0;
+--- gcc/cppspec.c.jj	Fri Jan 19 00:16:57 2001
++++ gcc/cppspec.c	Fri Jan 26 12:46:00 2001
+@@ -52,7 +52,8 @@ Boston, MA 02111-1307, USA.  */
+   || !strcmp (STR, "imacros") || !strcmp (STR, "aux-info") \
+   || !strcmp (STR, "idirafter") || !strcmp (STR, "iprefix") \
+   || !strcmp (STR, "iwithprefix") || !strcmp (STR, "iwithprefixbefore") \
+-  || !strcmp (STR, "isystem") || !strcmp (STR, "specs"))
++  || !strcmp (STR, "isystem") || !strcmp (STR, "specs") \
++  || !strcmp (STR, "MF") || !strcmp (STR, "MT") || !strcmp (STR, "MQ"))
+ 
+ #ifndef WORD_SWITCH_TAKES_ARG
+ #define WORD_SWITCH_TAKES_ARG(STR) DEFAULT_WORD_SWITCH_TAKES_ARG (STR)
+--- gcc/system.h.jj	Fri Jan 19 00:17:14 2001
++++ gcc/system.h	Fri Jan 26 12:41:51 2001
+@@ -75,6 +75,7 @@ extern int fputs_unlocked PARAMS ((const
+ # endif
+ #endif
+ 
++#ifndef SAFE_CTYPE_H
+ #include <ctype.h>
+ 
+ /* Jim Meyering writes:
+@@ -158,6 +159,7 @@ extern int fputs_unlocked PARAMS ((const
+    it's important to use the locale's definition of `digit' even when the
+    host does not conform to Posix.  */
+ #define ISDIGIT(c) ((unsigned) (c) - '0' <= 9)
++#endif /* SAFE_CTYPE_H */
+ 
+ /* Define a default escape character; its different for EBCDIC.  */
+ #ifndef TARGET_ESC
+@@ -573,6 +575,19 @@ extern void abort PARAMS ((void));
+ # define IS_DIR_SEPARATOR(ch) \
+ 	(((ch) == DIR_SEPARATOR) || ((ch) == DIR_SEPARATOR_2))
+ #endif /* DIR_SEPARATOR_2 */
++
++/* Say how to test for an absolute pathname.  On Unix systems, this is if
++   it starts with a leading slash or a '$', the latter meaning the value of
++   an environment variable is to be used.  On machien with DOS-based
++   file systems, it is also absolute if it starts with a drive identifier.  */
++#ifdef HAVE_DOS_BASED_FILE_SYSTEM
++#define IS_ABSOLUTE_PATHNAME(STR) \
++  (IS_DIR_SEPARATOR ((STR)[0]) || (STR)[0] == '$' \
++   || ((STR)[0] != '\0' && (STR)[1] == ':' && IS_DIR_SEPARATOR ((STR)[2])))
++#else
++#define IS_ABSOLUTE_PATHNAME(STR) \
++  (IS_DIR_SEPARATOR ((STR)[0]) || (STR)[0] == '$')
++#endif
+ 
+ /* Get libiberty declarations. */
+ #include "libiberty.h"
+--- gcc/defaults.h.jj	Mon Apr 17 13:42:44 2000
++++ gcc/defaults.h	Fri Jan 26 12:44:09 2001
+@@ -194,3 +194,11 @@ do { ASM_OUTPUT_LABEL(FILE,LABEL_ALTERNA
+ #ifndef DWARF_FRAME_REGISTERS
+ #define DWARF_FRAME_REGISTERS FIRST_PSEUDO_REGISTER
+ #endif
++
++#ifndef CHAR_TYPE_SIZE
++#define CHAR_TYPE_SIZE BITS_PER_UNIT
++#endif
++
++#ifndef LONG_TYPE_SIZE
++#define LONG_TYPE_SIZE BITS_PER_WORD
++#endif
+--- gcc/Makefile.in.jj	Fri Jan 19 00:16:53 2001
++++ gcc/Makefile.in	Fri Jan 26 12:47:07 2001
+@@ -1786,7 +1786,7 @@ PREPROCESSOR_DEFINES = \
+   -DTOOL_INCLUDE_DIR=\"$(gcc_tooldir)/include\"
+ 
+ LIBCPP_OBJS =	cpplib.o cpplex.o cppmacro.o cppexp.o cppfiles.o \
+-		cpphash.o cpperror.o cppinit.o cppulp.o cppdefault.o \
++		cpphash.o cpperror.o cppinit.o cppdefault.o \
+ 		mkdeps.o prefix.o version.o mbchar.o @extra_cpp_objs@
+ 
+ LIBCPP_DEPS =	cpplib.h cpphash.h intl.h system.h
+@@ -1805,7 +1805,6 @@ cpp0$(exeext): cppmain.o intl.o libcpp.a
+ 
+ cppmain.o:  cppmain.c  $(CONFIG_H) cpplib.h intl.h system.h
+ 
+-cppulp.o:   cppulp.c   $(CONFIG_H) system.h output.h
+ cpperror.o: cpperror.c $(CONFIG_H) $(LIBCPP_DEPS)
+ cppexp.o:   cppexp.c   $(CONFIG_H) $(LIBCPP_DEPS)
+ cpplex.o:   cpplex.c   $(CONFIG_H) $(LIBCPP_DEPS)
+@@ -1825,9 +1825,9 @@ mkdeps.o: mkdeps.c $(CONFIG_H) system.h 
+ 
+ # The traditional mode preprocessor, a separate program for ease of
+ # maintenance.  Some code is shared with the ISO-C cpp.
+-tradcpp0$(exeext): tradcpp.o tradcif.o cppdefault.o version.o intl.o $(LIBDEPS)
++tradcpp0$(exeext): tradcpp.o tradcif.o mkdeps.o cppdefault.o version.o intl.o $(LIBDEPS)
+ 	$(CC) $(ALL_CFLAGS) $(LDFLAGS) -o tradcpp0$(exeext) \
+-	tradcpp.o tradcif.o cppdefault.o version.o intl.o $(LIBS)
++	tradcpp.o tradcif.o mkdeps.o cppdefault.o version.o intl.o $(LIBS)
+ 
+ tradcpp.o: tradcpp.c $(CONFIG_H) system.h version.h cppdefault.h
+ tradcif.o: $(srcdir)/tradcif.c $(CONFIG_H) system.h
+--- gcc/gcc.c.jj	Fri Jan 19 00:17:13 2001
++++ gcc/gcc.c	Fri Jan 26 14:02:29 2001
+@@ -554,7 +554,8 @@ static const char *cpp_options =
+ "%{C:%{!E:%eGNU C does not support -C without using -E}}\
+  %{std*} %{nostdinc*}\
+  %{C} %{v} %{A*} %{I*} %{P} %{$} %I\
+- %{M} %{MM} %{MD:-MD %b.d} %{MMD:-MMD %b.d} %{MG}\
++ %{MD:-M -MF %b.d} %{MMD:-MM -MF %b.d}\
++ %{M} %{MM} %{MF*} %{MG} %{MP} %{MQ*} %{MT*} %{M|MD|MM|MMD:%{o*:-MQ %*}}\
+  %{!no-gcc:-D__GNUC__=%v1 -D__GNUC_MINOR__=%v2 -D__GNUC_PATCHLEVEL__=%v3}\
+  %{!undef:%{!ansi:%{!std=*:%p}%{std=gnu*:%p}} %P} %{trigraphs}\
+  %c %{Os:-D__OPTIMIZE_SIZE__} %{O*:%{!O0:-D__OPTIMIZE__}}\
+@@ -562,8 +563,8 @@ static const char *cpp_options =
+  %{fshort-wchar:-U__WCHAR_TYPE__ -D__WCHAR_TYPE__=short\\ unsigned\\ int}\
+  %{fshow-column} %{fno-show-column}\
+  %{fleading-underscore} %{fno-leading-underscore}\
+- %{foperator-names} %{fno-operator-names}\
+- %{g*} %{W*} %{w} %{pedantic*} %{H} %{d*} %C %{D*} %{U*} %{i*} %Z %i\
++ %{foperator-names} %{fno-operator-names} %{ftabstop=*} %{remap}\
++ %{g3:-dD} %{W*} %{w} %{pedantic*} %{H} %{d*} %C %{D*} %{U*} %{i*} %Z %i\
+  %{E:%W{o*}}%{M:%W{o*}}%{MM:%W{o*}}";
+ 
+ static const char *cc1_options =
+@@ -624,7 +625,8 @@ static struct user_specs *user_specs_hea
+   || !strcmp (STR, "imacros") || !strcmp (STR, "aux-info") \
+   || !strcmp (STR, "idirafter") || !strcmp (STR, "iprefix") \
+   || !strcmp (STR, "iwithprefix") || !strcmp (STR, "iwithprefixbefore") \
+-  || !strcmp (STR, "isystem") || !strcmp (STR, "specs"))
++  || !strcmp (STR, "isystem") || !strcmp (STR, "specs") \
++  || !strcmp (STR, "MF") || !strcmp (STR, "MT") || !strcmp (STR, "MQ"))
+ 
+ #ifndef WORD_SWITCH_TAKES_ARG
+ #define WORD_SWITCH_TAKES_ARG(STR) DEFAULT_WORD_SWITCH_TAKES_ARG (STR)
+--- libiberty/Makefile.in.jj	Thu Jul 27 19:46:54 2000
++++ libiberty/Makefile.in	Fri Jan 26 12:21:52 2001
+@@ -135,7 +135,7 @@ CFILES = asprintf.c alloca.c argv.c atex
+ 	strchr.c strdup.c strerror.c strncmp.c strrchr.c strsignal.c strstr.c \
+ 	strtod.c strtol.c strtoul.c tmpnam.c vasprintf.c vfork.c vfprintf.c   \
+ 	vprintf.c vsprintf.c waitpid.c xatexit.c xexit.c xmalloc.c	      \
+-	xmemdup.c xstrdup.c xstrerror.c
++	xmemdup.c xstrdup.c xstrerror.c safe-ctype.c
+ 
+ # These are always included in the library.
+ REQUIRED_OFILES = argv.o choose-temp.o concat.o cplus-dem.o cp-demangle.o \
+@@ -143,7 +143,7 @@ REQUIRED_OFILES = argv.o choose-temp.o c
+ 	getruntime.o hashtab.o hex.o floatformat.o objalloc.o obstack.o	  \
+ 	partition.o pexecute.o sort.o spaces.o splay-tree.o strerror.o	  \
+ 	strsignal.o xatexit.o xexit.o xmalloc.o xmemdup.o xstrdup.o	  \
+-	xstrerror.o
++	xstrerror.o safe-ctype.o
+ 
+ $(TARGETLIB): $(REQUIRED_OFILES) $(EXTRA_OFILES) $(LIBOBJS) $(ALLOCA)
+ 	rm -f $(TARGETLIB)

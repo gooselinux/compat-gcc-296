@@ -1,0 +1,24 @@
+2001-01-02  Richard Henderson  <rth@redhat.com>
+
+	* alpha.md (*ze_and_ne): Duplicate insn condition to split.
+
+*** gcc/config/alpha/alpha.md	2000/11/28 21:31:40	1.133
+--- gcc/config/alpha/alpha.md	2001/01/02 08:02:48
+***************
+*** 1820,1826 ****
+  			 (match_operand 2 "const_int_operand" "I")))]
+    "(unsigned HOST_WIDE_INT) INTVAL (operands[2]) < 8"
+    "#"
+!   ""
+    [(set (match_dup 0)
+  	(and:DI (match_dup 1) (match_dup 3)))
+     (set (match_dup 0)
+--- 1820,1826 ----
+  			 (match_operand 2 "const_int_operand" "I")))]
+    "(unsigned HOST_WIDE_INT) INTVAL (operands[2]) < 8"
+    "#"
+!   "(unsigned HOST_WIDE_INT) INTVAL (operands[2]) < 8"
+    [(set (match_dup 0)
+  	(and:DI (match_dup 1) (match_dup 3)))
+     (set (match_dup 0)
+

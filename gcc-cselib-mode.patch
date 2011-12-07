@@ -1,0 +1,271 @@
+2000-11-28  Bernd Schmidt  <bernds@redhat.co.uk>
+
+	* simplify-rtx.c (cselib_record_sets): Ignore sets whose destination
+	is anything but REG or MEM, but look inside STRICT_LOW_PART.
+
+2000-11-27  Bernd Schmidt  <bernds@redhat.co.uk>
+
+	* reload1.c (reload_cse_simplify_set): Pass down mode to cselib_lookup.
+	(reload_cse_simplify_operands): Do nothing about operands where both
+	the operand and the match_operand fail to give us a mode.
+	* simplify-rtx.c (wrap_constant): New function.
+	(entry_and_rtx_equal_p): Except integer constants to come wrapped in a
+	CONST describing the proper mode.
+	(rtx_equal_for_cselib_p): Pass down modes to recursive calls of
+	cselib_lookup.
+	(cselib_lookup_mem): Call wrap_constant on the rtx that is passed to
+	htab_find_slot_with_hash.
+	(cselib_lookup): Likewise.
+
+2001-04-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20010409-1.c: New test.
+
+--- gcc/simplify-rtx.c.jj	Thu Apr  5 21:24:42 2001
++++ gcc/simplify-rtx.c	Mon Apr  9 14:53:27 2001
+@@ -115,6 +115,7 @@ static void clear_table			PARAMS ((void)
+ static int discard_useless_locs		PARAMS ((void **, void *));
+ static int discard_useless_values	PARAMS ((void **, void *));
+ static void remove_useless_values	PARAMS ((void));
++static rtx wrap_constant		PARAMS ((enum machine_mode, rtx));
+ static unsigned int hash_rtx		PARAMS ((rtx, enum machine_mode, int));
+ static cselib_val *new_cselib_val	PARAMS ((unsigned int,
+ 						 enum machine_mode));
+@@ -2209,7 +2210,9 @@ clear_table ()
+ }
+ 
+ /* The equality test for our hash table.  The first argument ENTRY is a table
+-   element (i.e. a cselib_val), while the second arg X is an rtx.  */
++   element (i.e. a cselib_val), while the second arg X is an rtx.  We know
++   that all callers of htab_find_slot_with_hash will wrap CONST_INTs into a
++   CONST of an appropriate mode.  */
+ 
+ static int
+ entry_and_rtx_equal_p (entry, x_arg)
+@@ -2218,7 +2221,20 @@ entry_and_rtx_equal_p (entry, x_arg)
+   struct elt_loc_list *l;
+   const cselib_val *v = (const cselib_val *) entry;
+   rtx x = (rtx) x_arg;
++  enum machine_mode mode = GET_MODE (x);
+ 
++  if (GET_CODE (x) == CONST_INT
++      || (mode == VOIDmode && GET_CODE (x) == CONST_DOUBLE))
++    abort ();
++  if (mode != GET_MODE (v->u.val_rtx))
++    return 0;
++
++  /* Unwrap X if necessary.  */
++  if (GET_CODE (x) == CONST
++      && (GET_CODE (XEXP (x, 0)) == CONST_INT
++	  || GET_CODE (XEXP (x, 0)) == CONST_DOUBLE))
++    x = XEXP (x, 0);
++  
+   /* We don't guarantee that distinct rtx's have different hash values,
+      so we need to do a comparison.  */
+   for (l = v->locs; l; l = l->next)
+@@ -2354,7 +2370,7 @@ rtx_equal_for_cselib_p (x, y)
+   
+   if (GET_CODE (x) == REG || GET_CODE (x) == MEM)
+     {
+-      cselib_val *e = cselib_lookup (x, VOIDmode, 0);
++      cselib_val *e = cselib_lookup (x, GET_MODE (x), 0);
+ 
+       if (e)
+ 	x = e->u.val_rtx;
+@@ -2362,7 +2378,7 @@ rtx_equal_for_cselib_p (x, y)
+ 
+   if (GET_CODE (y) == REG || GET_CODE (y) == MEM)
+     {
+-      cselib_val *e = cselib_lookup (y, VOIDmode, 0);
++      cselib_val *e = cselib_lookup (y, GET_MODE (y), 0);
+ 
+       if (e)
+ 	y = e->u.val_rtx;
+@@ -2480,6 +2496,22 @@ rtx_equal_for_cselib_p (x, y)
+   return 1;
+ }
+ 
++/* We need to pass down the mode of constants through the hash table
++   functions.  For that purpose, wrap them in a CONST of the appropriate
++   mode.  */
++static rtx
++wrap_constant (mode, x)
++     enum machine_mode mode;
++     rtx x;
++{
++  if (GET_CODE (x) != CONST_INT
++      && (GET_CODE (x) != CONST_DOUBLE || GET_MODE (x) != VOIDmode))
++    return x;
++  if (mode == VOIDmode)
++    abort ();
++  return gen_rtx_CONST (mode, x);
++}
++
+ /* Hash an rtx.  Return 0 if we couldn't hash the rtx.
+    For registers and memory locations, we look up their cselib_val structure
+    and return its VALUE element.
+@@ -2678,31 +2710,33 @@ cselib_lookup_mem (x, create)
+      rtx x;
+      int create;
+ {
++  enum machine_mode mode = GET_MODE (x);
+   void **slot;
+   cselib_val *addr;
+   cselib_val *mem_elt;
+   struct elt_list *l;
+ 
+-  if (MEM_VOLATILE_P (x) || GET_MODE (x) == BLKmode
+-      || (FLOAT_MODE_P (GET_MODE (x)) && flag_float_store))
++  if (MEM_VOLATILE_P (x) || mode == BLKmode
++      || (FLOAT_MODE_P (mode) && flag_float_store))
+     return 0;
+ 
+   /* Look up the value for the address.  */
+-  addr = cselib_lookup (XEXP (x, 0), GET_MODE (x), create);
++  addr = cselib_lookup (XEXP (x, 0), mode, create);
+   if (! addr)
+     return 0;
+ 
+   /* Find a value that describes a value of our mode at that address.  */
+   for (l = addr->addr_list; l; l = l->next)
+-    if (GET_MODE (l->elt->u.val_rtx) == GET_MODE (x))
++    if (GET_MODE (l->elt->u.val_rtx) == mode)
+       return l->elt;
+ 
+   if (! create)
+     return 0;
+ 
+-  mem_elt = new_cselib_val (++next_unknown_value, GET_MODE (x));
++  mem_elt = new_cselib_val (++next_unknown_value, mode);
+   add_mem_for_addr (addr, mem_elt, x);
+-  slot = htab_find_slot_with_hash (hash_table, x, mem_elt->value, INSERT);
++  slot = htab_find_slot_with_hash (hash_table, wrap_constant (mode, x),
++				   mem_elt->value, INSERT);
+   *slot = mem_elt;
+   return mem_elt;
+ }
+@@ -2835,8 +2869,8 @@ cselib_lookup (x, mode, create)
+   if (! hashval)
+     return 0;
+ 
+-  slot = htab_find_slot_with_hash (hash_table, x, hashval,
+-				   create ? INSERT : NO_INSERT);
++  slot = htab_find_slot_with_hash (hash_table, wrap_constant (mode, x),
++				   hashval, create ? INSERT : NO_INSERT);
+   if (slot == 0)
+     return 0;
+ 
+@@ -3152,13 +3186,22 @@ cselib_record_sets (insn)
+      locations that are written.  */
+   for (i = 0; i < n_sets; i++)
+     {
+-      sets[i].src_elt = cselib_lookup (sets[i].src, GET_MODE (sets[i].dest),
+-				       1);
+-      if (GET_CODE (sets[i].dest) == MEM)
+-	sets[i].dest_addr_elt = cselib_lookup (XEXP (sets[i].dest, 0), Pmode,
+-					       1);
+-      else
+-	sets[i].dest_addr_elt = 0;
++      rtx dest = sets[i].dest;
++
++      /* A STRICT_LOW_PART can be ignored; we'll record the equivalence for
++         the low part after invalidating any knowledge about larger modes.  */
++      if (GET_CODE (sets[i].dest) == STRICT_LOW_PART)
++	sets[i].dest = dest = XEXP (dest, 0);
++
++      /* We don't know how to record anything but REG or MEM.  */
++      if (GET_CODE (dest) == REG || GET_CODE (dest) == MEM)
++        {
++	  sets[i].src_elt = cselib_lookup (sets[i].src, GET_MODE (dest), 1);
++	  if (GET_CODE (dest) == MEM)
++	    sets[i].dest_addr_elt = cselib_lookup (XEXP (dest, 0), Pmode, 1);
++	  else
++	    sets[i].dest_addr_elt = 0;
++	}
+     }
+ 
+   /* Invalidate all locations written by this insn.  Note that the elts we
+@@ -3168,7 +3211,11 @@ cselib_record_sets (insn)
+ 
+   /* Now enter the equivalences in our tables.  */
+   for (i = 0; i < n_sets; i++)
+-    cselib_record_set (sets[i].dest, sets[i].src_elt, sets[i].dest_addr_elt);
++    {
++      rtx dest = sets[i].dest;
++      if (GET_CODE (dest) == REG || GET_CODE (dest) == MEM)
++	cselib_record_set (dest, sets[i].src_elt, sets[i].dest_addr_elt);
++    }
+ }
+ 
+ /* Record the effects of INSN.  */
+--- gcc/reload1.c.jj	Thu Apr  5 21:25:03 2001
++++ gcc/reload1.c	Mon Apr  9 14:53:34 2001
+@@ -8084,7 +8084,7 @@ reload_cse_simplify_set (set, insn)
+     /* ???   */
+     old_cost = rtx_cost (src, SET);
+ 
+-  val = cselib_lookup (src, VOIDmode, 0);
++  val = cselib_lookup (src, GET_MODE (SET_DEST (set)), 0);
+   if (! val)
+     return 0;
+   for (l = val->locs; l; l = l->next)
+@@ -8219,8 +8219,11 @@ reload_cse_simplify_operands (insn)
+       CLEAR_HARD_REG_SET (equiv_regs[i]);
+ 
+       /* cselib blows up on CODE_LABELs.  Trying to fix that doesn't seem
+-	 right, so avoid the problem here.  */
+-      if (GET_CODE (recog_data.operand[i]) == CODE_LABEL)
++	 right, so avoid the problem here.  Likewise if we have a constant
++         and the insn pattern doesn't tell us the mode we need.  */
++      if (GET_CODE (recog_data.operand[i]) == CODE_LABEL
++	  || (CONSTANT_P (recog_data.operand[i])
++	      && recog_data.operand_mode[i] == VOIDmode))
+ 	continue;
+ 
+       v = cselib_lookup (recog_data.operand[i], recog_data.operand_mode[i], 0);
+--- gcc/testsuite/gcc.c-torture/execute/20010409-1.c.jj	Mon Apr  9 14:55:44 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010409-1.c	Mon Apr  9 14:55:37 2001
+@@ -0,0 +1,43 @@
++typedef __SIZE_TYPE__ size_t;
++extern size_t strlen (const char *s);
++
++typedef struct A {
++  int a, b;
++} A;
++
++typedef struct B {
++  struct A **a;
++  int b;
++} B;
++
++A *a;
++int b = 1, c;
++B d[1];
++
++void foo (A *x, const char *y, int z)
++{
++  c = y[4] + z * 25;
++}
++
++A *bar (const char *v, int w, int x, const char *y, int z)
++{
++  if (w)
++    abort ();
++  exit (0);
++}
++
++void test (const char *x, int *y)
++{
++  foo (d->a[d->b], "test", 200);
++  d->a[d->b] = bar (x, b ? 0 : 65536, strlen (x), "test", 201);
++  d->a[d->b]->a++;
++  if (y)
++    d->a[d->b]->b = *y;
++}
++
++int main ()
++{
++  d->b = 0;
++  d->a = &a;
++  test ("", 0);
++}

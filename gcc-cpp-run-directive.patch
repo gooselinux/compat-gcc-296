@@ -1,0 +1,16 @@
+2001-05-27  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cpplib.c (run_directive): Set pfile->directive.
+
+--- gcc/cpplib.c.jj	Fri Oct 12 16:49:21 2001
++++ gcc/cpplib.c	Thu Oct 18 10:53:03 2001
+@@ -398,7 +398,8 @@ run_directive (pfile, dir_no, type, buf,
+ 
+   start_directive (pfile);
+   pfile->state.prevent_expansion++;
+-  (void) (*dtable[dir_no].handler) (pfile);
++  pfile->directive = &dtable[dir_no];
++  (void) (*pfile->directive->handler) (pfile);
+   pfile->state.prevent_expansion--;
+   check_eol (pfile);
+   end_directive (pfile, 1);

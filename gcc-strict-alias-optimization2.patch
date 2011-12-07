@@ -1,0 +1,75 @@
+2003-10-20  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* function.c (objects_must_conflict_p): Remove case when the both
+	types are zero.  Check the types for zero when comparing of the
+	type equility.  Check the types for zero when comparing alias
+	sets.
+	(combine_temp_slots): Combine the slots when the both types are
+	zero.
+
+--- gcc/function.c.jj	2003-10-17 20:47:18.000000000 +0200
++++ gcc/function.c	2003-10-31 10:42:05.000000000 +0100
+@@ -643,12 +643,6 @@ objects_must_conflict_p (t1, t2)
+ {
+   HOST_WIDE_INT set1, set2;
+ 
+-  /* If neither has a type specified, we don't know if they'll conflict
+-     because we may be using them to store objects of various types, for
+-     example the argument and local variables areas of inlined functions.  */
+-  if (t1 == 0 && t2 == 0)
+-    return 0;
+-
+   /* If one or the other has readonly fields or is readonly,
+      then they may not conflict.  */
+   if ((t1 != 0 && readonly_fields_p (t1))
+@@ -657,21 +651,26 @@ objects_must_conflict_p (t1, t2)
+       || (t2 != 0 && TYPE_READONLY (t2)))
+     return 0;
+ 
+-  /* If they are the same type, they must conflict.  */
+-  if (t1 == t2
+-      /* Likewise if both are volatile.  */
+-      || (t1 != 0 && TYPE_VOLATILE (t1) && t2 != 0 && TYPE_VOLATILE (t2)))
++  /* If they are the same type, they must conflict.  Likewise if both
++     are volatile.  */
++  if (t1 != 0 && t2 != 0
++      && (t1 == t2 || (TYPE_VOLATILE (t1) && TYPE_VOLATILE (t2))))
+     return 1;
+ 
+   /* If one is aggregate and the other is scalar then they may not
+      conflict.  */
+-  if ((t1 != 0 && AGGREGATE_TYPE_P (t1))
+-      != (t2 != 0 && AGGREGATE_TYPE_P (t2)))
++  if ((t1 != 0 && AGGREGATE_TYPE_P (t1)) != (t2 != 0 && AGGREGATE_TYPE_P (t2)))
+     return 0;
+ 
+   set1 = (t1 ? get_alias_set (t1) : 0);
+   set2 = (t2 ? get_alias_set (t2) : 0);
+-  return (set1 == 0 || set2 == 0 || set1 == set2);
++  /* All alias sets are zero when there is no strict aliasing
++     (i.e. all memory location conflict with each other when the
++     decision is made on alias sets).  We could decide about the
++     conflicts for strict aliasing only for nonzero alias sets because
++     the argument substitution can change zero alias set to nonzero
++     one.  */
++  return (!flag_strict_aliasing || (set1 != 0 && set1 == set2));
+ }
+ 
+ /* Allocate a temporary stack slot and record it for possible later
+@@ -948,11 +947,14 @@ combine_temp_slots ()
+     {
+       int delete_p = 0;
+ 
+-      if (! p->in_use && GET_MODE (p->slot) == BLKmode)
++      /* To guarantee that other slots attributes are the same (in
++	 this case merged attribute will have the same attributes) we
++	 consider cases with zero types.  */
++      if (! p->in_use && GET_MODE (p->slot) == BLKmode && p->type == 0)
+ 	for (q = p->next, prev_q = p; q; q = prev_q->next)
+ 	  {
+ 	    int delete_q = 0;
+-	    if (! q->in_use && GET_MODE (q->slot) == BLKmode)
++	    if (! q->in_use && GET_MODE (q->slot) == BLKmode && q->type == 0)
+ 	      {
+ 		if (p->base_offset + p->full_size == q->base_offset)
+ 		  {

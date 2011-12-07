@@ -1,0 +1,29 @@
+2001-08-11  Neil Booth  <neil@daikokuya.demon.co.uk>
+
+	* cppmacro.c (enter_macro_context): Push macro expansions even
+	if empty.
+
+--- gcc/cppmacro.c.jj	Thu Aug  9 18:03:44 2001
++++ gcc/cppmacro.c	Fri Aug 17 20:20:36 2001
+@@ -673,16 +673,12 @@ enter_macro_context (pfile, node)
+       list.limit = macro->expansion + macro->count;
+     }
+ 
+-  /* Only push a macro context for non-empty replacement lists.  */
+-  if (list.first != list.limit)
+-    {
+-      context = next_context (pfile);
+-      context->list = list;
+-      context->macro = macro;
++  context = next_context (pfile);
++  context->list = list;
++  context->macro = macro;
+       
+-      /* Disable the macro within its expansion.  */
+-      macro->disabled = 1;
+-    }
++  /* Disable the macro within its expansion.  */
++  macro->disabled = 1;
+ 
+   return 1;
+ }

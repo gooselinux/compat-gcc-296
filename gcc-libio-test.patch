@@ -1,0 +1,15 @@
+2001-06-25  Jakub Jelinek  <jakub@redhat.com>
+
+	* iolibio.h (_IO_pos_BAD): Fix for glibc 2.2+.
+
+--- libio/iolibio.h.jj	Tue Feb 24 21:09:50 1998
++++ libio/iolibio.h	Mon Jun 25 11:37:09 2001
+@@ -38,7 +38,7 @@ extern int _IO_obstack_vprintf __P ((str
+                                     _IO_va_list));
+ extern int _IO_obstack_printf __P ((struct obstack *, const char *, ...));
+ #ifndef _IO_pos_BAD
+-#define _IO_pos_BAD ((_IO_fpos_t)(-1))
++#define _IO_pos_BAD ((_IO_off_t)(-1))
+ #endif
+ #define _IO_clearerr(FP) ((FP)->_flags &= ~(_IO_ERR_SEEN|_IO_EOF_SEEN))
+ #define _IO_fseek(__fp, __offset, __whence) \

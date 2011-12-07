@@ -1,0 +1,31 @@
+2001-04-25  Jakub Jelinek  <jakub@redhat.com>
+
+	* integrate.c (expand_inline_function): Check for error_mark_node
+	in actual argument.
+
+	* gcc.dg/noncompile/20010425-1.c: New test.
+
+--- gcc/integrate.c.jj	Wed Apr 18 17:20:42 2001
++++ gcc/integrate.c	Wed Apr 25 12:18:55 2001
+@@ -650,7 +650,8 @@ expand_inline_function (fndecl, parms, t
+       arg = TREE_VALUE (actual);
+       mode = TYPE_MODE (DECL_ARG_TYPE (formal));
+ 
+-      if (mode != TYPE_MODE (TREE_TYPE (arg))
++      if (arg == error_mark_node
++	  || mode != TYPE_MODE (TREE_TYPE (arg))
+ 	  /* If they are block mode, the types should match exactly.
+ 	     They don't match exactly if TREE_TYPE (FORMAL) == ERROR_MARK_NODE,
+ 	     which could happen if the parameter has incomplete type.  */
+--- gcc/testsuite/gcc.dg/noncompile/20010425-1.c.jj	Wed Apr 25 12:23:38 2001
++++ gcc/testsuite/gcc.dg/noncompile/20010425-1.c	Wed Apr 25 12:24:38 2001
+@@ -0,0 +1,9 @@
++__inline__ void bar(int x)
++{
++  (void)x;
++}
++
++void foo(void)
++{
++  bar(baz);  /* { dg-error "undeclared|for each function" } */
++}

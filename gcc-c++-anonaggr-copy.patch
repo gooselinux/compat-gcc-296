@@ -1,0 +1,89 @@
+2001-03-22  Jakub Jelinek  <jakub@redhat.com>
+
+	* method.c (do_build_assign_ref): Don't use build_modify_expr for
+	anonymous aggregates, since they don't have assignment operator
+	method.
+	* decl.c (fixup_anonymous_aggr): Disallow ctors, dtors and copy
+	assignment operators for anonymous structure fields.
+
+	* g++.old-deja/g++.other/anon8.C: New test.
+
+diff -up gcc/cp/decl.c.c++-anonaggr-copy gcc/cp/decl.c
+--- gcc/cp/decl.c.c++-anonaggr-copy	2008-07-15 11:12:48.000000000 -0400
++++ gcc/cp/decl.c	2008-07-15 11:12:52.000000000 -0400
+@@ -6974,6 +6974,33 @@ fixup_anonymous_aggr (t)
+   /* ISO C++ 9.5.3.  Anonymous unions may not have function members.  */
+   if (TYPE_METHODS (t))
+     error ("an anonymous union cannot have function members");
++
++  /* Anonymous aggregates cannot have fields with ctors, dtors or complex
++     assignment operators (because they cannot have these methods themselves).
++     For anonymous unions this is already checked because they are not allowed
++     in any union, otherwise we have to check it.  */
++  if (TREE_CODE (t) != UNION_TYPE)
++    {
++      tree field, type;
++
++      for (field = TYPE_FIELDS (t); field; field = TREE_CHAIN (field))
++	if (TREE_CODE (field) == FIELD_DECL)
++	  {
++	    type = TREE_TYPE (field);
++	    if (CLASS_TYPE_P (type))
++	      {
++	        if (TYPE_NEEDS_CONSTRUCTING (type))
++		  cp_error_at ("member %#D' with constructor not allowed in anonymous aggregate",
++			       field);
++		if (TYPE_HAS_NONTRIVIAL_DESTRUCTOR (type))
++		  cp_error_at ("member %#D' with destructor not allowed in anonymous aggregate",
++			       field);
++		if (TYPE_HAS_COMPLEX_ASSIGN_REF (type))
++		  cp_error_at ("member %#D' with copy assignment operator not allowed in anonymous aggregate",
++			       field);
++	      }
++	  }
++    }
+ }
+ 
+ /* Make sure that a declaration with no declarator is well-formed, i.e.
+diff -up gcc/cp/method.c.c++-anonaggr-copy gcc/cp/method.c
+--- gcc/cp/method.c.c++-anonaggr-copy	2008-07-15 11:12:47.000000000 -0400
++++ gcc/cp/method.c	2008-07-15 11:14:48.000000000 -0400
+@@ -2509,7 +2509,11 @@ do_build_assign_ref (fndecl)
+ 	  comp = build (COMPONENT_REF, TREE_TYPE (field), comp, field);
+ 	  init = build (COMPONENT_REF, TREE_TYPE (field), init, field);
+ 
+-	  finish_expr_stmt (build_modify_expr (comp, NOP_EXPR, init));
++	  if (DECL_NAME (field))
++	    finish_expr_stmt (build_modify_expr (comp, NOP_EXPR, init));
++	  else
++	    finish_expr_stmt (build (MODIFY_EXPR, TREE_TYPE (comp), comp,
++				     init));
+ 	}
+     }
+   finish_return_stmt (current_class_ref);
+diff -up /dev/null gcc/testsuite/g++.old-deja/g++.other/anon8.C
+--- /dev/null	2008-07-14 09:17:49.235004637 -0400
++++ gcc/testsuite/g++.old-deja/g++.other/anon8.C	2008-07-15 11:12:52.000000000 -0400
+@@ -0,0 +1,22 @@
++// Build don't link:
++
++struct B
++{
++  int a;
++  B & operator= (const B &);
++};
++
++struct A
++{
++  union {
++    int a;
++  };
++  B b;
++};
++
++A x;
++
++void foo (const A &y)
++{
++  x = y;
++}

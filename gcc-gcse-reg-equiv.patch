@@ -1,0 +1,123 @@
+2001-04-04  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcse.c (gcse_main): Fix comment typo.
+	(delete_null_pointer_check): Likewise.
+	(hash_scan_set): Don't consider sets with REG_EQUIV MEM notes.
+	* cse.c (cse_insn): Likewise.
+
+	* gcc.c-torture/execute/20010403-1.c: New test.
+
+--- gcc/testsuite/gcc.c-torture/execute/20010403-1.c.jj	Wed Apr  4 18:24:35 2001
++++ gcc/testsuite/gcc.c-torture/execute/20010403-1.c	Wed Apr  4 18:24:35 2001
+@@ -0,0 +1,36 @@
++void b (int *);
++void c (int, int);
++void d (int);
++
++int e;
++
++void a (int x, int y)
++{
++  int f = x ? e : 0;
++  int z = y;
++
++  b (&y);
++  c (z, y);
++  d (f);
++}
++
++void b (int *y)
++{
++  (*y)++;
++}
++
++void c (int x, int y)
++{
++  if (x == y)
++    abort ();
++}
++
++void d (int x)
++{
++}
++
++int main (void)
++{
++  a (0, 0);
++  exit (0);
++}
+--- gcc/gcse.c.jj	Wed Apr  4 17:48:16 2001
++++ gcc/gcse.c	Wed Apr  4 18:27:56 2001
+@@ -679,7 +679,7 @@ gcse_main (f, file)
+      a high connectivity will take a long time and is unlikely to be
+      particularly useful.
+ 
+-     In normal circumstances a cfg should have about twice has many edges
++     In normal circumstances a cfg should have about twice as many edges
+      as blocks.  But we do not want to punish small functions which have
+      a couple switch statements.  So we require a relatively large number
+      of basic blocks and the ratio of edges to blocks to be high.  */
+@@ -1855,7 +1855,7 @@ hash_scan_set (pat, insn, set_p)
+   if (GET_CODE (dest) == REG)
+     {
+       int regno = REGNO (dest);
+-      rtx tmp;
++      rtx tmp, note;
+ 
+       /* Only record sets of pseudo-regs in the hash table.  */
+       if (! set_p
+@@ -1863,7 +1863,14 @@ hash_scan_set (pat, insn, set_p)
+ 	  /* Don't GCSE something if we can't do a reg/reg copy.  */
+ 	  && can_copy_p [GET_MODE (dest)]
+ 	  /* Is SET_SRC something we want to gcse?  */
+-	  && want_to_gcse_p (src))
++	  && want_to_gcse_p (src)
++	  /* Don't GCSE if it has attached REG_EQUIV note.
++	     At this point this only function parameters should have
++	     REG_EQUIV notes and if the argument slot is used somewhere
++	     explicitely, it means address of parameter has been taken,
++	     so we should not extend the lifetime of the pseudo.  */
++	  && ((note = find_reg_note (insn, REG_EQUIV, NULL_RTX)) == 0
++	      || GET_CODE (XEXP (note, 0)) != MEM))
+ 	{
+ 	  /* An expression is not anticipatable if its operands are
+ 	     modified before this insn.  */
+@@ -5057,7 +5064,7 @@ delete_null_pointer_checks (f)
+      a high connectivity will take a long time and is unlikely to be
+      particularly useful.
+ 
+-     In normal circumstances a cfg should have about twice has many edges
++     In normal circumstances a cfg should have about twice as many edges
+      as blocks.  But we do not want to punish small functions which have
+      a couple switch statements.  So we require a relatively large number
+      of basic blocks and the ratio of edges to blocks to be high.  */
+--- gcc/cse.c.jj	Wed Apr  4 01:54:40 2001
++++ gcc/cse.c	Wed Apr  4 18:24:35 2001
+@@ -5679,12 +5679,23 @@ cse_insn (insn, libcall_insn)
+ 
+ 	    if (sets[i].src_elt == 0)
+ 	      {
++		rtx note;
++
+ 		/* Don't put a hard register source into the table if this is
+ 		   the last insn of a libcall.  In this case, we only need
+-		   to put src_eqv_elt in src_elt.  */
+-		if (GET_CODE (src) != REG
+-		    || REGNO (src) >= FIRST_PSEUDO_REGISTER
+-		    || ! find_reg_note (insn, REG_RETVAL, NULL_RTX))
++		   to put src_eqv_elt in src_elt.  Also, don't put source
++		   into the table if the insn has attached a REG_EQUIV note
++		   for MEM expression.  At this point this means a function
++		   parameter, and if this parameter is accessed using the
++		   MEM expression instead of the pseudo, it means the address
++		   of the parameter has been taken and CSE should not undo
++		   it.  */
++		if ((GET_CODE (src) != REG
++		     || REGNO (src) >= FIRST_PSEUDO_REGISTER
++		     || ! find_reg_note (insn, REG_RETVAL, NULL_RTX))
++		    && ((note = find_reg_note (insn, REG_EQUIV,
++					       NULL_RTX)) == 0
++			|| GET_CODE (XEXP (note, 0)) != MEM))
+ 		  {
+ 		    register struct table_elt *elt;
+ 

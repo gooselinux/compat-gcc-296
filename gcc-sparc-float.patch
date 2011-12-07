@@ -1,0 +1,15 @@
+2001-01-31  Alexandre Oliva  <aoliva@redhat.com>
+
+	* config/float-sparc.h (LDBL_MAX) [sparc32]: Fix typo.
+
+--- gcc/config/float-sparc.h.jj	Wed Oct  3 00:02:45 2001
++++ gcc/config/float-sparc.h	Wed Oct  3 00:03:01 2001
+@@ -113,7 +113,7 @@
+ #undef LDBL_MAX_EXP
+ #define LDBL_MAX_EXP DBL_MAX_EXP
+ #undef LDBL_MAX
+-#define LDBL_MAX DBLX_MAX
++#define LDBL_MAX DBL_MAX
+ #undef LDBL_MAX_10_EXP
+ #define LDBL_MAX_10_EXP DBL_MAX_10_EXP
+ 

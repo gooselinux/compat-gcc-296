@@ -1,0 +1,163 @@
+2002-03-05  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.h (REDO_SECTION_INFO_P): Define.
+	* c-common.c (decl_attribute): Call assemble_visibility only
+	if TREE_ASM_WRITTEN.
+	* tree.h (DECL_VISIBILITY): Define.
+	(MODULE_LOCAL_P): Define using DECL_VISIBILITY.
+
+2002-03-02  Richard Henderson  <rth@redhat.com>
+
+	* config/i386/i386.h (ENCODE_SECTION_INFO): MODULE_LOCAL_P applies
+	to functions as well.
+
+2002-03-02  Richard Henderson  <rth@redhat.com>
+
+        * varasm.c (maybe_assemble_visibility): New.
+        (assemble_start_function, assemble_variable,
+	assemble_alias): Use it.
+
+--- gcc/config/i386/i386.h.jj	Thu Feb 28 00:25:31 2002
++++ gcc/config/i386/i386.h	Tue Mar  5 22:49:07 2002
+@@ -1738,13 +1738,14 @@ do								\
+ 	    SYMBOL_REF_FLAG (XEXP (rtl, 0))			\
+ 	      = (TREE_CODE_CLASS (TREE_CODE (DECL)) != 'd'	\
+ 		 || ! TREE_PUBLIC (DECL)			\
+-		 || (TREE_CODE (DECL) == VAR_DECL		\
+-		     && MODULE_LOCAL_P (DECL)));		\
++		 || MODULE_LOCAL_P (DECL));			\
+ 	  }							\
+       }								\
+   }								\
+ while (0)
+ 
++#define REDO_SECTION_INFO_P(DECL) 1
++
+ /* The `FINALIZE_PIC' macro serves as a hook to emit these special
+    codes once the function is being compiled into assembly code, but
+    not before.  (It is not done before, because in the case of
+--- gcc/varasm.c.jj	Thu Feb 28 00:25:31 2002
++++ gcc/varasm.c	Tue Mar  5 22:59:37 2002
+@@ -177,6 +177,7 @@ static void output_constructor		PARAMS (
+ #ifdef ASM_WEAKEN_LABEL
+ static void remove_from_pending_weak_list	PARAMS ((char *));
+ #endif
++static void maybe_assemble_visibility	PARAMS ((tree));
+ #ifdef ASM_OUTPUT_BSS
+ static void asm_output_bss		PARAMS ((FILE *, tree, const char *, int, int));
+ #endif
+@@ -1076,6 +1077,8 @@ assemble_start_function (decl, fnname)
+       else
+ #endif
+       ASM_GLOBALIZE_LABEL (asm_out_file, fnname);
++
++      maybe_assemble_visibility (decl);
+     }
+ 
+   /* Do any machine/system dependent processing of the function name */
+@@ -1474,6 +1477,9 @@ assemble_variable (decl, top_level, at_e
+      from it in get_pointer_alignment.  */
+   DECL_ALIGN (decl) = align;
+ 
++  if (TREE_PUBLIC (decl))
++    maybe_assemble_visibility (decl);
++
+   /* Handle uninitialized definitions.  */
+ 
+   if ((DECL_INITIAL (decl) == 0 || DECL_INITIAL (decl) == error_mark_node)
+@@ -4757,6 +4763,8 @@ assemble_alias (decl, target)
+       else
+ #endif
+ 	ASM_GLOBALIZE_LABEL (asm_out_file, name);
++
++      maybe_assemble_visibility (decl);
+     }
+ 
+ #ifdef ASM_OUTPUT_DEF_FROM_DECLS
+@@ -4797,6 +4805,23 @@ assemble_visibility (decl, visibility_ty
+ #endif
+ }
+ 
++/* A helper function to call assemble_visibility when needed for a decl.  */
++
++static void
++maybe_assemble_visibility (decl)
++     tree decl;
++{
++  const char *type;
++  switch (DECL_VISIBILITY (decl))
++    {
++    case 0: return;
++    case 1: type = "internal"; break;
++    case 2: type = "hidden"; break;
++    case 3: type = "protected"; break;
++    }
++  assemble_visibility (decl, type);
++}
++
+ /* This determines whether or not we support link-once semantics.  */
+ #ifndef SUPPORTS_ONE_ONLY
+ #ifdef MAKE_DECL_ONE_ONLY
+--- gcc/c-common.c.jj	Thu Feb 28 00:25:31 2002
++++ gcc/c-common.c	Tue Mar  5 23:47:40 2002
+@@ -1027,6 +1027,7 @@ decl_attributes (node, attributes, prefi
+ 	  else
+ 	    {
+ 	      tree id;
++	      int vis = 0;
+ 
+ 	      id = TREE_VALUE (args);
+ 	      if (TREE_CODE (id) != STRING_CST)
+@@ -1035,16 +1036,21 @@ decl_attributes (node, attributes, prefi
+ 		  break;
+ 		}
+ 
+-	      if (strcmp (TREE_STRING_POINTER (id), "hidden")
+-		  && strcmp (TREE_STRING_POINTER (id), "protected")
+-		  && strcmp (TREE_STRING_POINTER (id), "internal"))
++	      if (strcmp (TREE_STRING_POINTER (id), "internal") == 0)
++		vis = 1;
++	      else if (strcmp (TREE_STRING_POINTER (id), "hidden") == 0)
++		vis = 2;
++	      else if (strcmp (TREE_STRING_POINTER (id), "protected") == 0)
++		vis = 3;
++	      else
+ 		{
+ 		  error ("visibility arg must be one of \"hidden\", \"protected\" or \"internal\"");
+ 		  break;
+ 		}
+ 
+-	      MODULE_LOCAL_P (decl) = 1;
+-	      assemble_visibility (decl, TREE_STRING_POINTER (id));
++	      DECL_VISIBILITY (decl) = vis;
++	      if (TREE_ASM_WRITTEN (decl))
++		assemble_visibility (decl, TREE_STRING_POINTER (id));
+ 	    }
+ 	  break;
+ 
+--- gcc/tree.h.jj	Thu Feb 28 00:25:31 2002
++++ gcc/tree.h	Tue Mar  5 23:52:14 2002
+@@ -1458,9 +1458,11 @@ struct tree_type
+    as "pure" function (like const function, but may read global memory).  */
+ #define DECL_IS_PURE(NODE) (FUNCTION_DECL_CHECK (NODE)->decl.pure_flag)
+ 
++#define DECL_VISIBILITY(NODE) (DECL_CHECK (NODE)->decl.visibility)
++
+ /* Nonzero if DECL will be always resolved to a symbol defined in the
+    same module (shared library or program).  */
+-#define MODULE_LOCAL_P(NODE) (DECL_CHECK (NODE)->decl.module_local_flag)
++#define MODULE_LOCAL_P(NODE) (DECL_VISIBILITY(NODE) != 0)
+ 
+ /* Nonzero in a FIELD_DECL means it is a bit field, and must be accessed
+    specially.  */
+@@ -1618,8 +1620,8 @@ struct tree_decl
+   unsigned pointer_depth : 2;
+   unsigned non_addressable : 1;
+   unsigned user_align : 1;
+-  unsigned module_local_flag : 1;
+-  /* Two unused bits.  */
++  unsigned visibility : 2;
++  /* One unused bit.  */
+ 
+   unsigned lang_flag_0 : 1;
+   unsigned lang_flag_1 : 1;

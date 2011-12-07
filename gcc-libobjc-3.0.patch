@@ -1,0 +1,576 @@
+2001-06-08  Nicola Pero  <n.pero@mi.flashnet.it>
+
+	* THREADS: Explain that when we compile libobjc inside GCC, we
+	always use thr-objc.c as a backend, which uses GCC's thread code.
+
+2001-06-06  Richard Frith-Macdonald  <rrfm@gnu.org>
+
+	* init.c (__objc_send_message_in_list): When setting a new entry
+	in __objc_load_methods use the method IMP as key, but check to see
+	if the method is in the hashtable by looking at the IMP also.
+	Also ... call the method after adding it to the hashtable rather
+	than before ... thus preventing an obscure possibility of infinite
+	recursion if a +load method itself loads a subclass.
+
+2001-05-25  Ovidiu Predescu  <ovidiu@cup.hp.com>
+
+	* init.c (__objc_send_message_in_list): When setting a new entry
+	in __objc_load_methods use the method name as key, not the method
+	IMP (reported by Richard Frith-Macdonald <richard@brainstorm.co.uk>).
+
+2001-05-22  Rainer Orth  <ro@TechFak.Uni-Bielefeld.DE>
+
+	* sendmsg.c (__objc_forward): Delete strlen() declaration.
+
+2001-03-19  David Edelsohn  <edelsohn@gnu.org>
+
+	* encoding.c (TYPE_MODE): Define.
+
+2001-03-14  Nicola Pero  <n.pero@mi.flashnet.it>
+
+	* thr.c (objc_thread_add): New function.
+	(objc_thread_remove): Ditto.
+	* objc/thr.h: Declare them.
+	* libobjc.def: Mention them.
+
+2001-01-12  Joseph S. Myers  <jsm28@cam.ac.uk>
+
+	* sendmsg.c (__objc_print_dtable_stats): Don't use #ifdef inside
+	printf.
+
+2000-01-11  Richard Earnshaw  <rearnsha@arm.com>
+
+	* encoding.c (STRUCTURE_SIZE_BOUNDARY): Redefine in a way that
+	determines the value dynamically.
+
+Wed Jan  3 00:49:10 2001  Ovidiu Predescu  <ovidiu@cup.hp.com>
+
+	* sendmsg.c: Added __objc_msg_forward, a hook that allows external
+	libraries to provide a function that returns the real forwarding
+	function. This can alleviate problems __builtin_apply() and
+	friends have on various platforms. (Solution suggested by Helge
+	Hess.)
+	
+	* objc/objc-api.h: Define __objc_msg_forward.
+
+	* sendmsg.c: Define gen_rtx_REG.
+
+Sun Aug  6 22:51:16 2000  Ovidiu Predescu  <ovidiu@cup.hp.com>
+
+	* thr-posix.c: Integrated Chris Ball's <cball@fmco.com> changes to
+	improve the Posix thread support for Objective-C.
+
+--- libobjc/THREADS	Sat Sep  4 17:09:19 1999
++++ libobjc/THREADS	Tue Jul 10 00:52:32 2001
+@@ -102,30 +102,33 @@ high degree of portability across platfo
+ 
+ The backend is composed of a file with the necessary code to map the ObjC
+ thread and mutex to a platform specific implementation.  For example, the
+-file thr-solaris.c contains the implementation for Solaris.  When you 
+-configure GCC, it attempts to pick an appropriate backend file for the
+-target platform; however, you can override this choice by assign the
+-OBJC_THREAD_FILE make variable to the basename of the backend file.  This
+-is especially useful on platforms which have multiple thread libraries.
+-For example:
+-
+-	make OBJC_THREAD_FILE=thr-posix
+-
+-would indicate that the generic posix backend file, thr-posix.c, should be
+-compiled with the ObjC runtime library.  If your platform does not support
+-threads then you should specify the OBJC_THREAD_FILE=thr-single backend file
+-to compile the ObjC runtime library without thread or mutex support; note
+-that programs which rely upon the ObjC thread and mutex functions will
+-compile and link correctly but attempting to create a thread or mutex will
+-result in an error.
++file thr-solaris.c contains the implementation for Solaris.
+ 
++If you are compiling libobjc as part of GCC, the thr-objc.c backend is
++always used; this backend uses GCC's gthread code.  The thread system
++is automatically configured when GCC is configured.  Important: make
++sure you configure GCC using `--enable-threads' if you want threads !
++  
++If you want to compile libobjc standalone, then you would need to
++modify the configure.in and makefiles for it; and you need to pick an
++appropriate backend file for the target platform; you make this choice
++by assigning the OBJC_THREAD_FILE make variable to the basename of the
++backend file.  For example, OBJC_THREAD_FILE=thr-posix would indicate
++that the generic posix backend file, thr-posix.c, should be compiled
++with the ObjC runtime library.  If your platform does not support
++threads then you should specify the OBJC_THREAD_FILE=thr-single
++backend file to compile the ObjC runtime library without thread or
++mutex support; note that programs which rely upon the ObjC thread and
++mutex functions will compile and link correctly but attempting to
++create a thread or mutex will result in an error.
++  
+ It is questionable whether it is really necessary to have both a
+ frontend and backend function for all available functionality.  On the
+ one hand, it provides a clear, consistent differentiation between what
+ is public and what is private with the downside of having the overhead
+-of multiple functions calls.  For example, the function to have a thread
+-yield the processor is objc_thread_yield; in the current implementation
+-this produces a function call set:
++of multiple functions calls.  For example, the function to have a
++thread yield the processor is objc_thread_yield; in the current
++implementation this produces a function call set:
+ 
+ objc_thread_yield()  ->  __objc_thread_yield()  ->  system yield function
+ 
+--- libobjc/encoding.c	Wed Apr 12 17:47:31 2000
++++ libobjc/encoding.c	Wed Mar 21 11:50:08 2001
+@@ -1,5 +1,5 @@
+ /* Encoding of types for Objective C.
+-   Copyright (C) 1993, 1995, 1996, 1997, 1998 Free Software Foundation, Inc.
++   Copyright (C) 1993, 1995, 1996, 1997, 1998, 2000 Free Software Foundation, Inc.
+    Contributed by Kresten Krab Thorup
+    Bitfield support by Ovidiu Predescu
+ 
+@@ -46,8 +46,8 @@ Boston, MA 02111-1307, USA.  */
+ /* Various hacks for objc_layout_record. These are used by the target
+    macros. */
+ 
+-#define TREE_CODE(TYPE) *TYPE
+-#define TREE_TYPE(TREE) TREE
++#define TREE_CODE(TYPE) *(TYPE)
++#define TREE_TYPE(TREE) (TREE)
+ 
+ #define RECORD_TYPE     _C_STRUCT_B
+ #define UNION_TYPE      _C_UNION_B
+@@ -56,12 +56,18 @@ Boston, MA 02111-1307, USA.  */
+ 
+ #define TYPE_FIELDS(TYPE)     objc_skip_typespec (TYPE)
+ 
+-#define DECL_MODE(TYPE)         *(TYPE)
++#define DECL_MODE(TYPE) *(TYPE)
++#define TYPE_MODE(TYPE) *(TYPE)
+ 
+ #define DFmode          _C_DBL
+ 
+ #define get_inner_array_type(TYPE)      ((TYPE) + 1)
+ 
++/* Some ports (eg ARM) allow the structure size boundary to be
++   selected at compile-time.  We override the normal definition with
++   one that has a constant value for this compilation.  */
++#undef STRUCTURE_SIZE_BOUNDARY
++#define STRUCTURE_SIZE_BOUNDARY (BITS_PER_UNIT * sizeof (struct{char a;}))
+ 
+ static inline int
+ atoi (const char* str)
+@@ -724,9 +730,7 @@ objc_layout_structure (const char *type,
+   layout->record_size = 0;
+   layout->record_align = BITS_PER_UNIT;
+ 
+-#ifdef STRUCTURE_SIZE_BOUNDARY
+   layout->record_align = MAX (layout->record_align, STRUCTURE_SIZE_BOUNDARY);
+-#endif
+ }
+ 
+ 
+--- libobjc/init.c	Mon Jun 21 06:41:41 1999
++++ libobjc/init.c	Tue Jul 10 00:52:32 2001
+@@ -313,15 +313,15 @@ __objc_send_message_in_list (MethodList_
+       Method_t mth = &method_list->method_list[i];
+ 
+       if (mth->method_name && sel_eq (mth->method_name, op)
+-	  && !hash_is_key_in_hash (__objc_load_methods, mth->method_name))
++	  && !hash_is_key_in_hash (__objc_load_methods, mth->method_imp))
+ 	{
+-	  /* The method was found and wasn't previously executed. */
+-	  (*mth->method_imp) ((id)class, mth->method_name);
+-
+ 	  /* Add this method into the +load hash table */
+ 	  hash_add (&__objc_load_methods, mth->method_imp, mth->method_imp);
+ 
+ 	  DEBUG_PRINTF ("sending +load in class: %s\n", class->name);
++
++	  /* The method was found and wasn't previously executed. */
++	  (*mth->method_imp) ((id)class, mth->method_name);
+ 
+ 	  break;
+ 	}
+--- libobjc/libobjc.def	Sat Sep  4 17:09:19 1999
++++ libobjc/libobjc.def	Wed Mar 21 11:50:08 2001
+@@ -45,6 +45,8 @@ objc_thread_id
+ objc_thread_set_data
+ objc_thread_set_priority
+ objc_thread_yield
++objc_thread_add
++objc_thread_remove
+ __objc_class_name_Object
+ __objc_class_name_Protocol
+ __objc_class_name_NXConstantString
+--- libobjc/objc/objc-api.h	Sat Sep  4 17:09:20 1999
++++ libobjc/objc/objc-api.h	Sun Jan  7 12:30:58 2001
+@@ -414,6 +414,13 @@ extern void *(*_objc_realloc)(void *, si
+ extern void *(*_objc_calloc)(size_t, size_t);
+ extern void (*_objc_free)(void *);
+ 
++/*
++**  Hook for method forwarding. This makes it easy to substitute a
++**  library, such as ffcall, that implements closures, thereby avoiding
++**  gcc's __builtin_apply problems.
++*/
++extern IMP (*__objc_msg_forward)(SEL);
++
+ Method_t class_get_class_method(MetaClass class, SEL aSel);
+ 
+ Method_t class_get_instance_method(Class class, SEL aSel);
+--- libobjc/objc/thr.h	Sat Sep  4 17:09:20 1999
++++ libobjc/objc/thr.h	Wed Mar 21 11:50:08 2001
+@@ -96,6 +96,8 @@ int objc_thread_get_priority(void);
+ void * objc_thread_get_data(void);
+ int objc_thread_set_data(void *value);
+ objc_thread_t objc_thread_id(void);
++void objc_thread_add(void);
++void objc_thread_remove(void);
+ 
+ /*
+   Use this to set the hook function that will be called when the 
+--- libobjc/sendmsg.c	Wed Sep 30 04:13:14 1998
++++ libobjc/sendmsg.c	Fri Jun  8 15:42:12 2001
+@@ -1,5 +1,6 @@
+ /* GNU Objective C Runtime message lookup 
+-   Copyright (C) 1993, 1995, 1996, 1997, 1998 Free Software Foundation, Inc.
++   Copyright (C) 1993, 1995, 1996, 1997, 1998,
++   2001 Free Software Foundation, Inc.
+    Contributed by Kresten Krab Thorup
+ 
+ This file is part of GNU CC.
+@@ -33,6 +34,7 @@ Boston, MA 02111-1307, USA.  */
+ /* this is how we hack STRUCT_VALUE to be 1 or 0 */
+ #define gen_rtx(args...) 1
+ #define gen_rtx_MEM(args...) 1
++#define gen_rtx_REG(args...) 1
+ #define rtx int
+ 
+ #if !defined(STRUCT_VALUE) || STRUCT_VALUE == 0
+@@ -44,6 +46,11 @@ Boston, MA 02111-1307, USA.  */
+ /* The uninstalled dispatch table */
+ struct sarray* __objc_uninstalled_dtable = 0;   /* !T:MUTEX */
+ 
++/* Hook for method forwarding. If it is set, is invoked to return a
++   function that performs the real forwarding. Otherwise the libgcc
++   based functions (__builtin_apply and friends) are used. */
++IMP (*__objc_msg_forward)(SEL) = NULL;
++
+ /* Send +initialize to class */
+ static void __objc_send_initialize(Class);
+ 
+@@ -76,18 +83,27 @@ __inline__
+ IMP
+ __objc_get_forward_imp (SEL sel)
+ {
+-  const char *t = sel->sel_types;
++  if (__objc_msg_forward)
++    {
++      IMP result;
++      if ((result = __objc_msg_forward (sel)))
++        return result;
++    }
++  else
++    {
++      const char *t = sel->sel_types;
+ 
+-  if (t && (*t == '[' || *t == '(' || *t == '{')
++      if (t && (*t == '[' || *t == '(' || *t == '{')
+ #ifdef OBJC_MAX_STRUCT_BY_VALUE
+-    && objc_sizeof_type(t) > OBJC_MAX_STRUCT_BY_VALUE
++          && objc_sizeof_type(t) > OBJC_MAX_STRUCT_BY_VALUE
+ #endif
+-      )
+-    return (IMP)__objc_block_forward;
+-  else if (t && (*t == 'f' || *t == 'd'))
+-    return (IMP)__objc_double_forward;
+-  else
+-    return (IMP)__objc_word_forward;
++          )
++        return (IMP)__objc_block_forward;
++      else if (t && (*t == 'f' || *t == 'd'))
++        return (IMP)__objc_double_forward;
++      else
++        return (IMP)__objc_word_forward;
++    }
+ }
+ 
+ /* Given a class and selector, return the selector's implementation.  */
+@@ -581,7 +597,6 @@ __objc_forward (id object, SEL sel, argl
+   /* The object doesn't recognize the method.  Check for responding to
+      error:.  If it does then sent it. */
+   {
+-    size_t strlen (const char*);
+     char msg[256 + strlen ((const char*)sel_get_name (sel))
+              + strlen ((const char*)object->class_pointer->name)];
+ 
+@@ -613,13 +628,11 @@ __objc_print_dtable_stats()
+ 
+   objc_mutex_lock(__objc_runtime_mutex);
+ 
+-  printf("memory usage: (%s)\n",
+ #ifdef OBJC_SPARSE2
+-	 "2-level sparse arrays"
++  printf("memory usage: (%s)\n", "2-level sparse arrays");
+ #else
+-	 "3-level sparse arrays"
++  printf("memory usage: (%s)\n", "3-level sparse arrays");
+ #endif
+-	 );
+ 
+   printf("arrays: %d = %ld bytes\n", narrays, 
+ 	 (long)narrays*sizeof(struct sarray));
+--- libobjc/thr-posix.c	Wed Sep 29 02:37:49 1999
++++ libobjc/thr-posix.c	Mon Aug  7 07:51:14 2000
+@@ -2,6 +2,7 @@
+    Copyright (C) 1996, 1997 Free Software Foundation, Inc.
+    Contributed by Galen C. Hunt (gchunt@cs.rochester.edu)
+    Modified for Linux/Pthreads by Kai-Uwe Sattler (kus@iti.cs.uni-magdeburg.de)
++   Modified for posix compliance by Chris Ball (cball@fmco.com)
+ 
+ This file is part of GNU CC.
+ 
+@@ -31,6 +32,7 @@ Boston, MA 02111-1307, USA.  */
+ 
+ /* Key structure for maintaining thread specific storage */
+ static pthread_key_t _objc_thread_storage;
++static pthread_attr_t _objc_thread_attribs;
+ 
+ /* Backend initialization functions */
+ 
+@@ -39,14 +41,34 @@ int
+ __objc_init_thread_system(void)
+ {
+   /* Initialize the thread storage key */
+-  return pthread_key_create(&_objc_thread_storage, NULL);
++  if (pthread_key_create(&_objc_thread_storage, NULL) == 0)
++    {
++      /*
++       * The normal default detach state for threads is PTHREAD_CREATE_JOINABLE
++       * which causes threads to not die when you think they should.
++	   */
++      if (pthread_attr_init(&_objc_thread_attribs) == 0)
++        {
++          if (pthread_attr_setdetachstate(&_objc_thread_attribs, 
++                                          PTHREAD_CREATE_DETACHED) == 0)
++            return 0;
++        }
++    }
++
++  return -1;
+ }
+ 
+ /* Close the threads subsystem. */
+ int
+ __objc_close_thread_system(void)
+ {
+-  return 0;
++  if (pthread_key_delete(_objc_thread_storage) == 0)
++    {
++      if (pthread_attr_destroy(&_objc_thread_attribs) == 0)
++        return 0;
++    }
++
++  return -1;
+ }
+ 
+ /* Backend thread functions */
+@@ -57,20 +79,50 @@ __objc_thread_detach(void (*func)(void *
+ {
+   objc_thread_t thread_id;
+   pthread_t new_thread_handle;
+-
+-  if ( !(pthread_create(&new_thread_handle, NULL, (void *)func, arg)) )
+-      thread_id = *(objc_thread_t *)&new_thread_handle;
++  
++  if (!(pthread_create(&new_thread_handle, &_objc_thread_attribs, 
++                       (void *)func, arg)))
++    thread_id = *(objc_thread_t *)&new_thread_handle;
+   else
+     thread_id = NULL;
+   
+   return thread_id;
+ }
+ 
+-/* Set the current thread's priority. */
++/* Set the current thread's priority.
++ *
++ * Be aware that the default schedpolicy often disallows thread priorities.
++ */
+ int
+ __objc_thread_set_priority(int priority)
+ {
+-  /* Not implemented yet */
++  pthread_t thread_id = pthread_self();
++  int policy;
++  struct sched_param params;
++  int priority_min, priority_max;
++
++  if (pthread_getschedparam(thread_id, &policy, &params) == 0)
++    {
++      if ((priority_max = sched_get_priority_max(policy)) != 0)
++        return -1;
++
++      if ((priority_min = sched_get_priority_min(policy)) != 0)
++        return -1;
++
++      if (priority > priority_max)
++        priority = priority_max;
++      else if (priority < priority_min)
++        priority = priority_min;
++      params.sched_priority = priority;
++
++      /*
++       * The solaris 7 and several other man pages incorrectly state that
++       * this should be a pointer to policy but pthread.h is universally
++       * at odds with this.
++       */
++      if (pthread_setschedparam(thread_id, policy, &params) == 0)
++        return 0;
++    }
+   return -1;
+ }
+ 
+@@ -78,8 +130,13 @@ __objc_thread_set_priority(int priority)
+ int
+ __objc_thread_get_priority(void)
+ {
+-  /* Not implemented yet */
+-  return -1;
++  int policy;
++  struct sched_param params;
++
++  if (pthread_getschedparam(pthread_self(), &policy, &params) == 0)
++    return params.sched_priority;
++  else
++    return -1;
+ }
+ 
+ /* Yield our process time to another thread. */
+@@ -113,7 +170,10 @@ __objc_thread_id(void)
+ int
+ __objc_thread_set_data(void *value)
+ {
+-  return pthread_setspecific(_objc_thread_storage, value);
++  if (pthread_setspecific(_objc_thread_storage, value) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Returns the thread's local storage pointer. */
+@@ -152,10 +212,9 @@ __objc_mutex_deallocate(objc_mutex_t mut
+    * pthread_mutex_destroy to work.
+    */
+ 
+-  while ( count )
++  while (count)
+     {
+-      if (( count = pthread_mutex_unlock((pthread_mutex_t *)mutex->backend))
+-          < 0 )
++      if ((count = pthread_mutex_unlock((pthread_mutex_t*)mutex->backend)) < 0)
+         return -1;
+     }
+ 
+@@ -171,21 +230,30 @@ __objc_mutex_deallocate(objc_mutex_t mut
+ int
+ __objc_mutex_lock(objc_mutex_t mutex)
+ {
+-  return pthread_mutex_lock((pthread_mutex_t *)mutex->backend);
++  if (pthread_mutex_lock((pthread_mutex_t *)mutex->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Try to grab a lock on a mutex. */
+ int
+ __objc_mutex_trylock(objc_mutex_t mutex)
+ {
+-  return pthread_mutex_trylock((pthread_mutex_t *)mutex->backend);
++  if (pthread_mutex_trylock((pthread_mutex_t *)mutex->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Unlock the mutex */
+ int
+ __objc_mutex_unlock(objc_mutex_t mutex)
+ {
+-  return pthread_mutex_unlock((pthread_mutex_t *)mutex->backend);
++  if (pthread_mutex_unlock((pthread_mutex_t *)mutex->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Backend condition mutex functions */
+@@ -222,22 +290,29 @@ __objc_condition_deallocate(objc_conditi
+ int
+ __objc_condition_wait(objc_condition_t condition, objc_mutex_t mutex)
+ {
+-  return pthread_cond_wait((pthread_cond_t *)condition->backend,
+-			   (pthread_mutex_t *)mutex->backend);
++  if (pthread_cond_wait((pthread_cond_t *)condition->backend,
++                        (pthread_mutex_t *)mutex->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Wake up all threads waiting on this condition. */
+ int
+ __objc_condition_broadcast(objc_condition_t condition)
+ {
+-  return pthread_cond_broadcast((pthread_cond_t *)condition->backend);
++  if (pthread_cond_broadcast((pthread_cond_t *)condition->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+ 
+ /* Wake up one thread waiting on this condition. */
+ int
+ __objc_condition_signal(objc_condition_t condition)
+ {
+-  return pthread_cond_signal((pthread_cond_t *)condition->backend);
++  if (pthread_cond_signal((pthread_cond_t *)condition->backend) == 0)
++    return 0;
++  else
++    return -1;
+ }
+-
+-/* End of File */
+--- libobjc/thr.c	Sat Sep  4 17:09:20 1999
++++ libobjc/thr.c	Wed Mar 21 11:50:08 2001
+@@ -531,4 +531,33 @@ objc_condition_signal(objc_condition_t c
+   return __objc_condition_signal(condition);
+ }
+ 
++/* Make the objc thread system aware that a thread which is managed
++   (started, stopped) by external code could access objc facilities
++   from now on.  This is used when you are interfacing with some
++   external non-objc-based environment/system - you must call
++   objc_thread_add() before an alien thread makes any calls to
++   Objective-C.  Do not cause the _objc_became_multi_threaded hook to
++   be executed. */
++void 
++objc_thread_add(void)
++{
++  objc_mutex_lock(__objc_runtime_mutex);
++  __objc_is_multi_threaded = 1;
++  __objc_runtime_threads_alive++;
++  objc_mutex_unlock(__objc_runtime_mutex);  
++}
++
++/* Make the objc thread system aware that a thread managed (started,
++   stopped) by some external code will no longer access objc and thus
++   can be forgotten by the objc thread system.  Call
++   objc_thread_remove() when your alien thread is done with making
++   calls to Objective-C. */
++void
++objc_thread_remove(void)
++{
++  objc_mutex_lock(__objc_runtime_mutex);
++  __objc_runtime_threads_alive--;
++  objc_mutex_unlock(__objc_runtime_mutex);  
++}
++
+ /* End of File */

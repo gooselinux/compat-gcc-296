@@ -1,0 +1,188 @@
+2004-08-11  Jakub Jelinek  <jakub@redhat.com>
+
+	PR c++/16276
+	* output.h (function_readonly_data_section): New prototype.
+	* varasm.c (function_readonly_data_section): New function.
+	* final.c (final_scan_insn): Call it instead of
+	readonly_data_section.
+
+	* g++.old-deja/g++.other/comdat4.C: New test.
+	* g++.old-deja/g++.other/comdat4-aux.cc: New.
+
+--- gcc/output.h.jj	2004-08-01 15:22:30.000000000 +0200
++++ gcc/output.h	2004-08-18 11:44:31.788357267 +0200
+@@ -198,6 +198,10 @@ extern void named_section		PARAMS ((tree
+ /* Tell assembler to switch to the section for function DECL.  */
+ extern void function_section		PARAMS ((tree));
+ 
++/* Tell assembler to switch to the readonly data section associated
++   with function DECL.  */
++extern void function_readonly_data_section PARAMS ((tree));
++
+ /* Tell assembler to switch to the section for the exception table.  */
+ extern void exception_section		PARAMS ((void));
+ 
+--- gcc/final.c.jj	2004-08-01 15:22:28.000000000 +0200
++++ gcc/final.c	2004-08-18 11:36:14.662140222 +0200
+@@ -2437,7 +2437,7 @@ final_scan_insn (insn, file, optimize, p
+ #else
+ 	      if (! JUMP_TABLES_IN_TEXT_SECTION)
+ 		{
+-		  readonly_data_section ();
++		  function_readonly_data_section (current_function_decl);
+ #ifdef READONLY_DATA_SECTION
+ 		  ASM_OUTPUT_ALIGN (file,
+ 				    exact_log2 (BIGGEST_ALIGNMENT
+--- gcc/varasm.c.jj	2004-08-01 15:22:30.000000000 +0200
++++ gcc/varasm.c	2004-08-18 11:42:59.188688061 +0200
+@@ -467,6 +467,46 @@ function_section (decl)
+     text_section ();
+ }
+ 
++/* Switch to read-only data section associated with function DECL.
++
++   If DECL is NULL_TREE, switch to readonly_data_section ().  */
++
++void
++function_readonly_data_section (decl)
++     tree decl;
++{
++  if (decl != NULL_TREE && DECL_SECTION_NAME (decl))
++    {
++      const char *name = TREE_STRING_POINTER (DECL_SECTION_NAME (decl));
++
++      /* For .gnu.linkonce.t.foo we want to use .gnu.linkonce.r.foo.  */
++      if (DECL_ONE_ONLY (decl) && strncmp (name, ".gnu.linkonce.t.", 16) == 0)
++	{
++	  size_t len = strlen (name) + 1;
++	  char *rname = alloca (len);
++
++	  memcpy (rname, name, len);
++	  rname[14] = 'r';
++	  named_section (decl, rname, 0);
++	  return;
++	}
++      /* For .text.foo we want to use .rodata.foo.  */
++      else if (flag_function_sections && flag_data_sections
++	       && strncmp (name, ".text.", 6) == 0)
++	{
++	  size_t len = strlen (name) + 1;
++	  char *rname = alloca (len + 2);
++
++	  memcpy (rname, ".rodata", 7);
++	  memcpy (rname + 7, name + 5, len - 5);
++	  named_section (decl, rname, 0);
++	  return;
++	}
++    }
++
++  readonly_data_section ();
++}
++
+ /* Switch to section for variable DECL.
+ 
+    RELOC is the `reloc' argument to SELECT_SECTION.  */
+--- gcc/testsuite/g++.old-deja/g++.other/comdat4.C.jj	2004-08-18 11:45:08.382905277 +0200
++++ gcc/testsuite/g++.old-deja/g++.other/comdat4.C	2004-08-18 11:45:36.197981444 +0200
+@@ -0,0 +1,58 @@
++// PR c++/16276
++
++// Special g++ Options: -O
++
++// Additional sources: comdat4-aux.cc
++
++extern void
++bar (int x);
++
++inline void
++foo (int i)
++{
++  switch (i)
++    {
++    case 3:
++    case 5:
++    case 6:
++    case 9:
++    case 15:
++      bar (1);
++      break;
++    case 2:
++    case 4:
++    case 7:
++    case 10:
++    case 11:
++    case 12:
++      bar (2);
++      break;
++    case 0:
++    case 1:
++    case 8:
++    case 13:
++    case 16:
++      bar (3);
++      break;
++    case 14:
++      bar (4);
++      break;
++    default:
++      bar (5);
++      break;
++    }
++}
++
++void *fooaddr = (void *) foo;
++
++void
++bar (int x)
++{
++  __asm __volatile ("" : : "r" (x));
++}
++
++int
++main (void)
++{
++  return 0;
++}
+--- gcc/testsuite/g++.old-deja/g++.other/comdat4-aux.cc.jj	2004-08-18 11:45:08.383905101 +0200
++++ gcc/testsuite/g++.old-deja/g++.other/comdat4-aux.cc	2004-08-18 11:45:08.383905101 +0200
+@@ -0,0 +1,40 @@
++extern void
++bar (int x);
++
++inline void
++foo (int i)
++{
++  switch (i)
++    {
++    case 3:
++    case 5:
++    case 6:
++    case 9:
++    case 15:
++      bar (1);
++      break;
++    case 2:
++    case 4:
++    case 7:
++    case 10:
++    case 11:
++    case 12:
++      bar (2);
++      break;
++    case 0:
++    case 1:
++    case 8:
++    case 13:
++    case 16:
++      bar (3);
++      break;
++    case 14:
++      bar (4);
++      break;
++    default:
++      bar (5);
++      break;
++    }
++}
++
++void *fooaddr2 = (void *) foo;

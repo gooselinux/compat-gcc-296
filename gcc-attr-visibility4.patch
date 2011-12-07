@@ -1,0 +1,18 @@
+2002-03-20  Jakub Jelinek  <jakub@redhat.com>
+
+	* c-common.c (decl_attributes) [A_VISIBILITY]: If REDO_SECTION_INFO_P,
+	call ENCODE_SECTION_INFO.
+
+--- gcc/c-common.c.jj	Wed Mar 13 22:53:40 2002
++++ gcc/c-common.c	Wed Mar 20 14:52:54 2002
+@@ -1049,6 +1049,10 @@ decl_attributes (node, attributes, prefi
+ 		}
+ 
+ 	      DECL_VISIBILITY (decl) = vis;
++#ifdef REDO_SECTION_INFO_P
++	      if (DECL_RTL (decl) != 0 && REDO_SECTION_INFO_P (decl))
++		ENCODE_SECTION_INFO (decl);
++#endif
+ 	      if (TREE_ASM_WRITTEN (decl))
+ 		assemble_visibility (decl, TREE_STRING_POINTER (id));
+ 	    }

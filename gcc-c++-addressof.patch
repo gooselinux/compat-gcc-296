@@ -1,0 +1,72 @@
+2000-11-11  Jason Merrill  <jason@redhat.com>
+
+	* function.c (assign_parms): If TREE_ADDRESSABLE is set, try to 
+	give the parm a register and then call put_var_into_stack.
+	* stmt.c (expand_decl): Likewise.
+
+cp/:
+2000-11-11  Jason Merrill  <jason@redhat.com>
+
+	* typeck.c (mark_addressable): Don't call put_var_into_stack.
+
+--- gcc/cp/typeck.c.jj	Wed Dec  6 16:50:24 2000
++++ gcc/cp/typeck.c	Fri Dec  8 21:31:42 2000
+@@ -4927,7 +4927,6 @@ mark_addressable (exp)
+ 	    if (! flag_this_is_variable)
+ 	      error ("cannot take the address of `this', which is an ravlue expression");
+ 	    TREE_ADDRESSABLE (x) = 1; /* so compiler doesn't die later */
+-	    put_var_into_stack (x);
+ 	    return 1;
+ 	  }
+       case VAR_DECL:
+--- gcc/stmt.c.jj	Wed Dec  6 16:50:26 2000
++++ gcc/stmt.c	Fri Dec  8 21:31:37 2000
+@@ -3724,7 +3724,6 @@ expand_decl (decl)
+ 	   && !(flag_float_store
+ 		&& TREE_CODE (type) == REAL_TYPE)
+ 	   && ! TREE_THIS_VOLATILE (decl)
+-	   && ! TREE_ADDRESSABLE (decl)
+ 	   && (DECL_REGISTER (decl) || optimize)
+ 	   /* if -fcheck-memory-usage, check all variables.  */
+ 	   && ! current_function_check_memory_usage)
+@@ -3742,6 +3741,10 @@ expand_decl (decl)
+ 			  TYPE_ALIGN (TREE_TYPE (TREE_TYPE (decl))));
+ 
+       maybe_set_unchanging (DECL_RTL (decl), decl);
++
++      /* If something wants our address, try to use ADDRESSOF.  */
++      if (TREE_ADDRESSABLE (decl))
++	put_var_into_stack (decl);
+     }
+ 
+   else if (TREE_CODE (DECL_SIZE_UNIT (decl)) == INTEGER_CST
+--- gcc/function.c.jj	Wed Dec  6 16:50:22 2000
++++ gcc/function.c	Fri Dec  8 21:31:27 2000
+@@ -4486,8 +4486,6 @@ assign_parms (fndecl)
+       else if (! ((! optimize
+ 		   && ! DECL_REGISTER (parm)
+ 		   && ! DECL_INLINE (fndecl))
+-		  /* layout_decl may set this.  */
+-		  || TREE_ADDRESSABLE (parm)
+ 		  || TREE_SIDE_EFFECTS (parm)
+ 		  /* If -ffloat-store specified, don't put explicit
+ 		     float variables into registers.  */
+@@ -4585,8 +4583,6 @@ assign_parms (fndecl)
+ 	      && ! ((! optimize
+ 		     && ! DECL_REGISTER (parm)
+ 		     && ! DECL_INLINE (fndecl))
+-		    /* layout_decl may set this.  */
+-		    || TREE_ADDRESSABLE (parm)
+ 		    || TREE_SIDE_EFFECTS (parm)
+ 		    /* If -ffloat-store specified, don't put explicit
+ 		       float variables into registers.  */
+@@ -4754,6 +4750,9 @@ assign_parms (fndecl)
+ 	    mark_reg_pointer (parmreg,
+ 			      TYPE_ALIGN (TREE_TYPE (TREE_TYPE (parm))));
+ 
++	  /* If something wants our address, try to use ADDRESSOF.  */
++	  if (TREE_ADDRESSABLE (parm))
++	    put_var_into_stack (parm);
+ 	}
+       else
+ 	{

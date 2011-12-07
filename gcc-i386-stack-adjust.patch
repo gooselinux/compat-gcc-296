@@ -1,0 +1,235 @@
+2001-06-12  Richard Henderson  <rth@redhat.com>
+
+	* config/i386/i386.c (ix86_expand_prologue): Always use
+	gen_pro_epilogue_adjust_stack; update arguments.
+	(ix86_emit_epilogue_esp_adjustment): Likewise.
+	(ix86_expand_epilogue): Likewise.
+	* config/i386/i386.md (pro_epilogue_adjust_stack): Use a BLKmode
+	clobber of scratch memory instead of a modification of EBP as the
+	barrier.  Update all peepholes to match.
+
+--- gcc/config/i386/i386.c.jj	Fri Jun  8 20:54:13 2001
++++ gcc/config/i386/i386.c	Wed Jun 13 16:24:05 2001
+@@ -424,7 +424,6 @@ static HOST_WIDE_INT ix86_compute_frame_
+ static int ix86_nsaved_regs PARAMS((void));
+ static void ix86_emit_save_regs PARAMS((void));
+ static void ix86_emit_restore_regs_using_mov PARAMS ((rtx, int));
+-static void ix86_emit_epilogue_esp_adjustment PARAMS((int));
+ static void ix86_sched_reorder_pentium PARAMS((rtx *, rtx *));
+ static void ix86_sched_reorder_ppro PARAMS((rtx *, rtx *));
+ 
+@@ -1963,13 +1962,9 @@ ix86_expand_prologue ()
+     ;
+   else if (! TARGET_STACK_PROBE || tsize < CHECK_STACK_LIMIT)
+     {
+-      if (frame_pointer_needed)
+-	insn = emit_insn (gen_pro_epilogue_adjust_stack
+-			  (stack_pointer_rtx, stack_pointer_rtx,
+-		           GEN_INT (-tsize), hard_frame_pointer_rtx));
+-      else
+-        insn = emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
+-				      GEN_INT (-tsize)));
++      insn = emit_insn (gen_pro_epilogue_adjust_stack
++			(stack_pointer_rtx, stack_pointer_rtx,
++		        GEN_INT (-tsize)));
+       RTX_FRAME_RELATED_P (insn) = 1;
+     }
+   else
+@@ -2004,25 +1999,6 @@ ix86_expand_prologue ()
+     emit_insn (gen_blockage ());
+ }
+ 
+-/* Emit code to add TSIZE to esp value.  Use POP instruction when
+-   profitable.  */
+-
+-static void
+-ix86_emit_epilogue_esp_adjustment (tsize)
+-     int tsize;
+-{
+-  /* If a frame pointer is present, we must be sure to tie the sp
+-     to the fp so that we don't mis-schedule.  */
+-  if (frame_pointer_needed)
+-    emit_insn (gen_pro_epilogue_adjust_stack (stack_pointer_rtx,
+-					      stack_pointer_rtx,
+-					      GEN_INT (tsize),
+-					      hard_frame_pointer_rtx));
+-  else
+-    emit_insn (gen_addsi3 (stack_pointer_rtx, stack_pointer_rtx,
+-			   GEN_INT (tsize)));
+-}
+-
+ /* Emit code to restore saved registers using MOV insns.  First register
+    is restored from POINTER + OFFSET.  */
+ static void
+@@ -2102,7 +2078,9 @@ ix86_expand_epilogue (emit_return)
+ 	ix86_emit_restore_regs_using_mov (hard_frame_pointer_rtx, offset);
+ 
+       if (!frame_pointer_needed)
+-	ix86_emit_epilogue_esp_adjustment (tsize + nregs * UNITS_PER_WORD);
++	emit_insn (gen_pro_epilogue_adjust_stack
++		   (stack_pointer_rtx, stack_pointer_rtx,
++		    GEN_INT (tsize + nregs * UNITS_PER_WORD)));
+       /* If not an i386, mov & pop is faster than "leave". */
+       else if (TARGET_USE_LEAVE || optimize_size)
+ 	emit_insn (gen_leave ());
+@@ -2110,8 +2088,7 @@ ix86_expand_epilogue (emit_return)
+ 	{
+ 	  emit_insn (gen_pro_epilogue_adjust_stack (stack_pointer_rtx,
+ 						    hard_frame_pointer_rtx,
+-						    const0_rtx,
+-						    hard_frame_pointer_rtx));
++						    const0_rtx));
+ 	  emit_insn (gen_popsi1 (hard_frame_pointer_rtx));
+ 	}
+     }
+@@ -2125,11 +2102,12 @@ ix86_expand_epilogue (emit_return)
+ 	    abort ();
+           emit_insn (gen_pro_epilogue_adjust_stack (stack_pointer_rtx,
+ 						    hard_frame_pointer_rtx,
+-						    GEN_INT (offset),
+-						    hard_frame_pointer_rtx));
++						    GEN_INT (offset)));
+ 	}
+       else if (tsize)
+-	ix86_emit_epilogue_esp_adjustment (tsize);
++	emit_insn (gen_pro_epilogue_adjust_stack
++		   (stack_pointer_rtx, stack_pointer_rtx,
++		    GEN_INT (tsize)));
+ 
+       for (regno = 0; regno < STACK_POINTER_REGNUM; regno++)
+ 	if ((regs_ever_live[regno] && !call_used_regs[regno])
+@@ -6395,14 +6373,6 @@ ix86_adjust_cost (insn, link, dep_insn, 
+ 
+   insn_type = get_attr_type (insn);
+   dep_insn_type = get_attr_type (dep_insn);
+-
+-  /* Prologue and epilogue allocators can have a false dependency on ebp.
+-     This results in one cycle extra stall on Pentium prologue scheduling,
+-     so handle this important case manually.  */
+-  if (dep_insn_code_number == CODE_FOR_pro_epilogue_adjust_stack
+-      && dep_insn_type == TYPE_ALU
+-      && !reg_mentioned_p (stack_pointer_rtx, insn))
+-    return 0;
+ 
+   switch (ix86_cpu)
+     {
+--- gcc/config/i386/i386.md.jj	Fri Jun  8 20:54:01 2001
++++ gcc/config/i386/i386.md	Wed Jun 13 15:59:01 2001
+@@ -1505,7 +1505,7 @@
+ (define_insn "*pushsi2_prologue"
+   [(set (match_operand:SI 0 "push_operand" "=<")
+ 	(match_operand:SI 1 "general_no_elim_operand" "ri*m"))
+-   (set (reg:SI 6) (reg:SI 6))]
++   (clobber (mem:BLK (scratch)))]
+   ""
+   "push{l}\\t%1"
+   [(set_attr "type" "push")
+@@ -1516,7 +1516,7 @@
+ 	(mem:SI (reg:SI 7)))
+    (set (reg:SI 7)
+ 	(plus:SI (reg:SI 7) (const_int 4)))
+-   (set (reg:SI 6) (reg:SI 6))]
++   (clobber (mem:BLK (scratch)))]
+   ""
+   "pop{l}\\t%0"
+   [(set_attr "type" "pop")
+@@ -9181,7 +9181,8 @@
+ 
+ (define_insn "leave"
+   [(set (reg:SI 7) (reg:SI 6))
+-   (set (reg:SI 6) (mem:SI (pre_dec:SI (reg:SI 7))))]
++   (set (reg:SI 6) (mem:SI (pre_dec:SI (reg:SI 7))))
++   (clobber (mem:BLK (scratch)))]
+   ""
+   "leave"
+   [(set_attr "length_immediate" "0")
+@@ -10725,9 +10726,8 @@
+   [(set (match_operand:SI 0 "register_operand" "=r,r")
+ 	(plus:SI (match_operand:SI 1 "register_operand" "0,r")
+ 	         (match_operand:SI 2 "immediate_operand" "i,i")))
+-   (set (match_operand:SI 3 "register_operand" "+r,r")
+-	(match_dup 3))
+-   (clobber (reg:CC 17))]
++   (clobber (reg:CC 17))
++   (clobber (mem:BLK (scratch)))]
+   ""
+   "*
+ {
+@@ -11326,23 +11326,23 @@
+ (define_peephole2
+   [(match_scratch:SI 0 "r")
+    (parallel [(set (reg:SI 7) (plus:SI (reg:SI 7) (const_int -4)))
+-	      (set (reg:SI 6) (reg:SI 6))
+-	      (clobber (reg:CC 17))])]
++	      (clobber (reg:CC 17))
++	      (clobber (mem:BLK (scratch)))])]
+   "optimize_size || !TARGET_SUB_ESP_4"
+   [(clobber (match_dup 0))
+    (parallel [(set (mem:SI (pre_dec:SI (reg:SI 7))) (match_dup 0))
+-	      (set (reg:SI 6) (reg:SI 6))])])
++	      (clobber (mem:BLK (scratch)))])])
+ 
+ (define_peephole2
+   [(match_scratch:SI 0 "r")
+    (parallel [(set (reg:SI 7) (plus:SI (reg:SI 7) (const_int -8)))
+-	      (set (reg:SI 6) (reg:SI 6))
+-	      (clobber (reg:CC 17))])]
++	      (clobber (reg:CC 17))
++	      (clobber (mem:BLK (scratch)))])]
+   "optimize_size || !TARGET_SUB_ESP_8"
+   [(clobber (match_dup 0))
+    (set (mem:SI (pre_dec:SI (reg:SI 7))) (match_dup 0))
+    (parallel [(set (mem:SI (pre_dec:SI (reg:SI 7))) (match_dup 0))
+-	      (set (reg:SI 6) (reg:SI 6))])])
++	      (clobber (mem:BLK (scratch)))])])
+ 
+ ;; Convert esp substractions to push.
+ (define_peephole2
+@@ -11366,12 +11366,12 @@
+ (define_peephole2
+   [(match_scratch:SI 0 "r")
+    (parallel [(set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))
+-	      (set (reg:SI 6) (reg:SI 6))
+-	      (clobber (reg:CC 17))])]
++	      (clobber (reg:CC 17))
++	      (clobber (mem:BLK (scratch)))])]
+   "optimize_size || !TARGET_ADD_ESP_4"
+   [(parallel [(set (match_dup 0) (mem:SI (reg:SI 7)))
+ 	      (set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))
+-	      (set (reg:SI 6) (reg:SI 6))])]
++	      (clobber (mem:BLK (scratch)))])]
+   "")
+ 
+ ;; Two pops case is tricky, since pop causes dependency on destination register.
+@@ -11380,12 +11380,12 @@
+   [(match_scratch:SI 0 "r")
+    (match_scratch:SI 1 "r")
+    (parallel [(set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 8)))
+-	      (set (reg:SI 6) (reg:SI 6))
+-	      (clobber (reg:CC 17))])]
++	      (clobber (reg:CC 17))
++	      (clobber (mem:BLK (scratch)))])]
+   "optimize_size || !TARGET_ADD_ESP_8"
+   [(parallel [(set (match_dup 0) (mem:SI (reg:SI 7)))
+ 	      (set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))
+-	      (set (reg:SI 6) (reg:SI 6))])
++	      (clobber (mem:BLK (scratch)))])
+    (parallel [(set (match_dup 1) (mem:SI (reg:SI 7)))
+ 	      (set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))])]
+   "")
+@@ -11393,12 +11393,12 @@
+ (define_peephole2
+   [(match_scratch:SI 0 "r")
+    (parallel [(set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 8)))
+-	      (set (reg:SI 6) (reg:SI 6))
+-	      (clobber (reg:CC 17))])]
++	      (clobber (reg:CC 17))
++	      (clobber (mem:BLK (scratch)))])]
+   "optimize_size"
+   [(parallel [(set (match_dup 0) (mem:SI (reg:SI 7)))
+ 	      (set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))
+-	      (set (reg:SI 6) (reg:SI 6))])
++	      (clobber (mem:BLK (scratch)))])
+    (parallel [(set (match_dup 0) (mem:SI (reg:SI 7)))
+ 	      (set (reg:SI 7) (plus:SI (reg:SI 7) (const_int 4)))])]
+   "")

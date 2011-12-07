@@ -1,0 +1,18 @@
+Tue Jan  2 10:47:38 2001  Richard Kenner  <kenner@vlsi1.ultra.nyu.edu>
+
+	* expr.c (store_constructor_field): Update ALIGN before calling
+	store_constructor.
+
+--- gcc/expr.c.jj	Sat Feb  3 23:48:06 2001
++++ gcc/expr.c	Mon Feb  5 14:56:13 2001
+@@ -4196,6 +4196,10 @@ store_constructor_field (target, bitsize
+ 			    ? BLKmode : VOIDmode,
+ 			    plus_constant (XEXP (target, 0),
+ 					   bitpos / BITS_PER_UNIT));
++
++      if (bitpos != 0)
++	align = MIN (align, bitpos & - bitpos);
++
+       store_constructor (exp, target, align, cleared, bitsize / BITS_PER_UNIT);
+     }
+   else

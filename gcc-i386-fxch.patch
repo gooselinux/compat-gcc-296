@@ -1,0 +1,51 @@
+2002-02-26  Jan Hubicka  <jh@suse.cz>
+
+	* i386.h (HARD_REGNO_RENAME_OK): Define.
+	* i386.md (fop_[sd]f_comm*): Allow memory in operand1 before reload.
+
+--- gcc/config/i386/i386.h.jj	Thu Feb 14 22:42:43 2002
++++ gcc/config/i386/i386.h	Wed Feb 27 12:50:29 2002
+@@ -2645,6 +2645,15 @@ extern enum reg_class const regclass_map
+ extern struct rtx_def *ix86_compare_op0;	/* operand 0 for comparisons */
+ extern struct rtx_def *ix86_compare_op1;	/* operand 1 for comparisons */
+ 
++/* Avoid renaming of stack registers, as doing so in combination with
++   scheduling just increases amount of live registers at time and in
++   the turn amount of fxch instructions needed.
++
++   ??? Maybe Pentium chips benefits from renaming, someone can try...  */
++
++#define HARD_REGNO_RENAME_OK(SRC, TARGET)  \
++  ((SRC) < FIRST_STACK_REG || (SRC) > LAST_STACK_REG)
++
+ /*
+ Local variables:
+ version-control: t
+--- gcc/config/i386/i386.md.jj	Thu Feb 14 22:42:47 2002
++++ gcc/config/i386/i386.md	Wed Feb 27 12:52:12 2002
+@@ -9306,9 +9306,10 @@
+ (define_insn "*fop_sf_comm"
+   [(set (match_operand:SF 0 "register_operand" "=f")
+ 	(match_operator:SF 3 "binary_fp_operator"
+-			[(match_operand:SF 1 "register_operand" "%0")
++			[(match_operand:SF 1 "nonimmediate_operand" "%0")
+ 			 (match_operand:SF 2 "nonimmediate_operand" "fm")]))]
+-  "TARGET_80387 && GET_RTX_CLASS (GET_CODE (operands[3])) == 'c'"
++  "TARGET_80387 && GET_RTX_CLASS (GET_CODE (operands[3])) == 'c'
++   && (GET_CODE (operands[1]) != MEM || GET_CODE (operands[2]) != MEM)"
+   "* return output_387_binary_op (insn, operands);"
+   [(set (attr "type") 
+         (if_then_else (match_operand:SF 3 "mult_operator" "") 
+@@ -9319,9 +9320,10 @@
+ (define_insn "*fop_df_comm"
+   [(set (match_operand:DF 0 "register_operand" "=f")
+ 	(match_operator:DF 3 "binary_fp_operator"
+-			[(match_operand:DF 1 "register_operand" "%0")
++			[(match_operand:DF 1 "nonimmediate_operand" "%0")
+ 			 (match_operand:DF 2 "nonimmediate_operand" "fm")]))]
+-  "TARGET_80387 && GET_RTX_CLASS (GET_CODE (operands[3])) == 'c'"
++  "TARGET_80387 && GET_RTX_CLASS (GET_CODE (operands[3])) == 'c'
++   && (GET_CODE (operands[1]) != MEM || GET_CODE (operands[2]) != MEM)"
+   "* return output_387_binary_op (insn, operands);"
+   [(set (attr "type") 
+         (if_then_else (match_operand:DF 3 "mult_operator" "") 

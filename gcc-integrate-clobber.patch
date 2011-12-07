@@ -1,0 +1,47 @@
+Wed Sep 27 14:00:07 2000  Donald Lindsay  <dlindsay@cygnus.com>
+
+	* integrate.c (copy_insn_list): if an ignored return value
+	is being clobbered, skip cloning that into the inline copy.
+
+2000-11-21  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/20001121-1.c: New test.
+
+--- gcc/integrate.c	Tue Nov 21 12:47:30 2000
++++ gcc/integrate.c	Tue Nov 21 12:48:29 2000
+@@ -1294,6 +1294,13 @@ copy_insn_list (insns, map, static_chain
+ 		break;
+ 	    }
+ 
++	  /* Similarly if an ignored return value is clobbered.  */
++	  else if (map->inline_target == 0
++		   && GET_CODE (pattern) == CLOBBER
++		   && GET_CODE (XEXP (pattern, 0)) == REG
++		   && REG_FUNCTION_VALUE_P (XEXP (pattern, 0)))
++	    break;
++
+ 	  /* If this is setting the static chain rtx, omit it.  */
+ 	  else if (static_chain_value != 0
+ 		   && set != 0
+--- gcc/testsuite/gcc.c-torture/execute/20001121-1.c.jj	Tue Nov 21 13:11:15 2000
++++ gcc/testsuite/gcc.c-torture/execute/20001121-1.c	Tue Nov 21 13:11:33 2000
+@@ -0,0 +1,19 @@
++double d;
++
++__inline__ double foo (void)
++{
++  return d;
++}
++
++__inline__ int bar (void)
++{
++  foo();
++  return 0;
++}
++
++int main (void)
++{
++  if (bar ())
++    abort ();
++  exit (0);
++}

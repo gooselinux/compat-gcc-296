@@ -1,0 +1,82 @@
+2002-02-25  Jakub Jelinek  <jakub@redhat.com>
+
+	PR target/5755
+	* config/i386/i386.c (ix86_return_pops_args): Only pop
+	fake structure return argument if it was passed on the stack.
+
+	* gcc.dg/20020224-1.c: New test.
+
+--- gcc/config/i386/i386.c.jj	2002/02/21 23:06:16	1.367
++++ gcc/config/i386/i386.c	2002/02/25 22:49:43	1.368
+@@ -830,11 +830,24 @@ ix86_return_pops_args (fundecl, funtype,
+       return size;
+   }
+ 
+-  /* Lose any fake structure return argument.  */
++  /* Lose any fake structure return argument if it is passed on the stack.  */
+   if (aggregate_value_p (TREE_TYPE (funtype)))
+-    return GET_MODE_SIZE (Pmode);
++    {
++      int nregs = ix86_regparm;
+ 
+-    return 0;
++      if (funtype)
++	{
++	  tree attr = lookup_attribute ("regparm", TYPE_ATTRIBUTES (funtype));
++
++	  if (attr)
++	    nregs = TREE_INT_CST_LOW (TREE_VALUE (TREE_VALUE (attr)));
++	}
++
++      if (!nregs)
++	return GET_MODE_SIZE (Pmode);
++    }
++
++  return 0;
+ }
+ 
+ /* Argument support functions.  */
+--- gcc/testsuite/gcc.dg/20020224-1.c.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/gcc.dg/20020224-1.c	Sun Feb 24 21:49:30 2002
+@@ -0,0 +1,41 @@
++/* PR target/5755
++   This testcase failed because the caller of a function returning struct
++   expected the callee to pop up the hidden return structure pointer,
++   while callee was actually not poping it up (as the hidden argument
++   was passed in register).  */
++/* { dg-do run { target i?86-*-* } } */
++/* { dg-options "-O2 -fomit-frame-pointer" } */
++
++extern void abort (void);
++extern void exit (int);
++
++typedef struct {
++   int a1, a2;
++} A;
++
++A a;
++
++A __attribute__ ((regparm (2)))
++foo (int x)
++{
++  return a;
++}
++
++int __attribute__ ((regparm (2)))
++bar (int x)
++{
++  int r = foo(0).a2;
++  return r;
++}
++
++int
++main ()
++{
++  int f;
++  a.a1 = 530;
++  a.a2 = 980;
++  f = bar (0);
++  if (f != 980)
++    abort ();
++  exit (0);
++}

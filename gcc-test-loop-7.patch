@@ -1,0 +1,26 @@
+2000-11-13  Jakub Jelinek  <jakub@redhat.com>
+
+	* gcc.c-torture/execute/loop-7.c: New test.
+
+--- gcc/testsuite/gcc.c-torture/execute/loop-7.c.jj	Thu Aug 24 11:00:32 2000
++++ gcc/testsuite/gcc.c-torture/execute/loop-7.c	Thu Nov  9 15:37:48 2000
+@@ -0,0 +1,19 @@
++void foo (unsigned int n)
++{
++  int i, j = -1;
++
++  for (i = 0; i < 10 && j < 0; i++)
++    {
++      if ((1UL << i) == n)
++	j = i;
++    }
++
++  if (j < 0)
++    abort ();
++}
++
++main()
++{
++  foo (64);
++  exit (0);
++}

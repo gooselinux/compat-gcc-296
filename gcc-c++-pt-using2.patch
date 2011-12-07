@@ -1,0 +1,48 @@
+2001-05-24  Nathan Sidwell  <nathan@codesourcery.com>
+
+	PR c++/2184
+	* decl2.c (do_local_using_decl): Push the decls, even in a
+	template.
+
+	* g++.old-deja/g++.pt/using2.C: New test.
+
+--- gcc/cp/decl2.c.jj	2001/05/21 15:55:40	1.466
++++ gcc/cp/decl2.c	2001/05/24 12:00:49	1.467
+@@ -5136,8 +5136,6 @@ do_local_using_decl (decl)
+   if (building_stmt_tree ()
+       && at_function_scope_p ())
+     add_decl_stmt (decl);
+-  if (processing_template_decl)
+-    return;
+ 
+   oldval = lookup_name_current_level (name);
+   oldtype = lookup_type_current_level (name);
+--- gcc/testsuite/g++.old-deja/g++.pt/using2.C.jj	Thu Aug 30 22:30:55 2001
++++ gcc/testsuite/g++.old-deja/g++.pt/using2.C	Thu May 24 14:00:52 2001
+@@ -0,0 +1,26 @@
++// Build don't link:
++// 
++// Copyright (C) 2001 Free Software Foundation, Inc.
++// Contributed by Nathan Sidwell 22 May 2001 <nathan@codesourcery.com>
++
++// Bug 2184. Using decls in templates weren't doing the right thing.
++
++namespace N {
++  template <class T>
++  class vector {};
++}
++
++void g(const int&) {
++  using N::vector;
++  typedef vector<int> V;
++}
++
++template <class J>
++void f(const J&) {
++  using N::vector;
++  typedef vector<int> V;
++}
++
++int main() {
++  f(0);
++}

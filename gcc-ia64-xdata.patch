@@ -1,0 +1,84 @@
+2001-04-23  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/ia64/ia64.h (ASM_OUTPUT_XDATA_CHAR, ASM_OUTPUT_XDATA_SHORT,
+	ASM_OUTPUT_XDATA_INT, ASM_OUTPUT_XDATA_DOUBLE_INT): Add section SUFFIX
+	argument.
+	(ASM_OUTPUT_EH_CHAR, ASM_OUTPUT_EH_SHORT, ASM_OUTPUT_EH_INT,
+	ASM_OUTPUT_EH_DOUBLE_INT): Add named section name as suffix.
+
+--- gcc/config/ia64/ia64.h.jj	Wed Apr 18 17:20:59 2001
++++ gcc/config/ia64/ia64.h	Mon Apr 23 14:12:02 2001
+@@ -2099,9 +2099,9 @@ do {									\
+ /* This is how to output an assembler line defining a `char' constant
+    to an xdata segment.  */
+ 
+-#define ASM_OUTPUT_XDATA_CHAR(FILE, SECTION, VALUE)			\
++#define ASM_OUTPUT_XDATA_CHAR(FILE, SECTION, SUFFIX, VALUE)		\
+ do {									\
+-  fprintf (FILE, "\t.xdata1\t\"%s\", ", SECTION);			\
++  fprintf (FILE, "\t.xdata1\t\"%s%s\", ", SECTION, SUFFIX);		\
+   output_addr_const (FILE, (VALUE));					\
+   fprintf (FILE, "\n");							\
+ } while (0)
+@@ -2109,9 +2109,9 @@ do {									\
+ /* This is how to output an assembler line defining a `short' constant
+    to an xdata segment.  */
+ 
+-#define ASM_OUTPUT_XDATA_SHORT(FILE, SECTION, VALUE)			\
++#define ASM_OUTPUT_XDATA_SHORT(FILE, SECTION, SUFFIX, VALUE)		\
+ do {									\
+-  fprintf (FILE, "\t.xdata2\t\"%s\", ", SECTION);			\
++  fprintf (FILE, "\t.xdata2\t\"%s%s\", ", SECTION, SUFFIX);		\
+   output_addr_const (FILE, (VALUE));					\
+   fprintf (FILE, "\n");							\
+ } while (0)
+@@ -2121,9 +2121,9 @@ do {									\
+ 
+ /* ??? For ILP32, also need to handle function addresses here.  */
+ 
+-#define ASM_OUTPUT_XDATA_INT(FILE, SECTION, VALUE)			\
++#define ASM_OUTPUT_XDATA_INT(FILE, SECTION, SUFFIX, VALUE)		\
+ do {									\
+-  fprintf (FILE, "\t.xdata4\t\"%s\", ", SECTION);			\
++  fprintf (FILE, "\t.xdata4\t\"%s%s\", ", SECTION, SUFFIX);		\
+   output_addr_const (FILE, (VALUE));					\
+   fprintf (FILE, "\n");							\
+ } while (0)
+@@ -2131,10 +2131,10 @@ do {									\
+ /* This is how to output an assembler line defining a `long' constant
+    to an xdata segment.  We also handle symbol output here.  */
+ 
+-#define ASM_OUTPUT_XDATA_DOUBLE_INT(FILE, SECTION, VALUE)		\
++#define ASM_OUTPUT_XDATA_DOUBLE_INT(FILE, SECTION, SUFFIX, VALUE)	\
+ do {									\
+   int need_closing_paren = 0;						\
+-  fprintf (FILE, "\t.xdata8\t\"%s\", ", SECTION);			\
++  fprintf (FILE, "\t.xdata8\t\"%s%s\", ", SECTION, SUFFIX);		\
+   if (!(TARGET_NO_PIC || TARGET_AUTO_PIC)				\
+       && GET_CODE (VALUE) == SYMBOL_REF)				\
+     {									\
+@@ -2150,16 +2150,20 @@ do {									\
+ 
+ /* Output EH data to the unwind segment. */
+ #define ASM_OUTPUT_EH_CHAR(FILE, VALUE)					\
+-		ASM_OUTPUT_XDATA_CHAR(FILE, ".IA_64.unwind_info", VALUE)
++		ASM_OUTPUT_XDATA_CHAR(FILE, ".IA_64.unwind_info",	\
++		in_section == in_named ? in_named_name : "", VALUE)
+ 
+ #define ASM_OUTPUT_EH_SHORT(FILE, VALUE)				\
+-		ASM_OUTPUT_XDATA_SHORT(FILE, ".IA_64.unwind_info", VALUE)
++		ASM_OUTPUT_XDATA_SHORT(FILE, ".IA_64.unwind_info",	\
++		in_section == in_named ? in_named_name : "", VALUE)
+ 
+ #define ASM_OUTPUT_EH_INT(FILE, VALUE)					\
+-		ASM_OUTPUT_XDATA_INT(FILE, ".IA_64.unwind_info", VALUE)
++		ASM_OUTPUT_XDATA_INT(FILE, ".IA_64.unwind_info",	\
++		in_section == in_named ? in_named_name : "", VALUE)
+ 
+ #define ASM_OUTPUT_EH_DOUBLE_INT(FILE, VALUE)				\
+-		ASM_OUTPUT_XDATA_DOUBLE_INT(FILE, ".IA_64.unwind_info", VALUE)
++		ASM_OUTPUT_XDATA_DOUBLE_INT(FILE, ".IA_64.unwind_info",	\
++		in_section == in_named ? in_named_name : "", VALUE)
+ 
+ /* A C statement to output to the stdio stream STREAM an assembler instruction
+    to assemble a single byte containing the number VALUE.  */

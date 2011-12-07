@@ -1,0 +1,45 @@
+2001-08-28  Jakub Jelinek  <jakub@redhat.com>
+
+	* libioP.h (FILEBUF_LITERAL): Set _offset and possibly _old_offset
+	fields to _IO_pos_BAD, not 0.
+
+--- libio/libioP.h.jj	Sun Jul  2 10:37:33 2000
++++ libio/libioP.h	Tue Aug 28 13:11:08 2001
+@@ -578,16 +578,33 @@ extern int _IO_vscanf __P ((const char *
+ #endif
+ 
+ #ifdef _IO_MTSAFE_IO
++# if defined(_G_IO_IO_FILE_VERSION) && _G_IO_IO_FILE_VERSION == 0x20001
+ /* check following! */
+-# define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
++#  define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
+        { _IO_MAGIC+_IO_LINKED+_IO_IS_FILEBUF+FLAGS, \
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CHAIN, FD, \
+-	   0, 0, 0, 0, { 0 }, &_IO_stdfile_##FD##_lock }
++	   0, _IO_pos_BAD, 0, 0, { 0 }, &_IO_stdfile_##FD##_lock, _IO_pos_BAD }
++# else
++/* check following! */
++#  define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
++       { _IO_MAGIC+_IO_LINKED+_IO_IS_FILEBUF+FLAGS, \
++         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CHAIN, FD, \
++	   0, _IO_pos_BAD, 0, 0, { 0 }, &_IO_stdfile_##FD##_lock }
++# endif
+ #else
++# if defined(_G_IO_IO_FILE_VERSION) && _G_IO_IO_FILE_VERSION == 0x20001
++/* check following! */
++#  define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
++       { _IO_MAGIC+_IO_LINKED+_IO_IS_FILEBUF+FLAGS, \
++	 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CHAIN, FD, \
++	   0, _IO_pos_BAD, 0, 0, { 0 }, 0, _IO_pos_BAD }
++# else
+ /* check following! */
+-# define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
++#  define FILEBUF_LITERAL(CHAIN, FLAGS, FD) \
+        { _IO_MAGIC+_IO_LINKED+_IO_IS_FILEBUF+FLAGS, \
+-	   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CHAIN, FD }
++	 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, CHAIN, FD, \
++	   0, _IO_pos_BAD }
++# endif
+ #endif
+ 
+ /* VTABLE_LABEL defines NAME as of the CLASS class.

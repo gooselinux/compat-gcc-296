@@ -1,0 +1,43 @@
+Thu Jun 28 00:47:23 2001  Rainer Orth  <ro@TechFak.Uni-Bielefeld.DE>
+
+	* objc/objc-act.c (handle_class_ref): Always place decl in
+	variable section.
+	(handle_impent): Always place decl in readonly data section.
+	Fixes PRs libobjc/917, libobjc/3237, bootstrap/3251.
+
+2001-06-14  John David Anglin  <dave@hiauly1.hia.nrc.ca>
+
+	* objc-act.c (handle_class_ref): Put the class reference in the
+	variable section for hpux only.
+	(handle_impent): Put the objc class and category name labels in
+	the readonly data section for hpux only.
+
+--- gcc/objc/objc-act.c.jj	Mon Aug 20 22:26:53 2001
++++ gcc/objc/objc-act.c	Thu Aug 23 22:33:19 2001
+@@ -8402,8 +8402,8 @@ handle_class_ref (chain)
+       pushdecl (decl);
+       rest_of_decl_compilation (decl, 0, 0, 0);
+ 
+-      /* Make following constant read-only (why not)?  */
+-      readonly_data_section ();
++      /* Put the decl in the variable section.  It may need relocation.  */
++      variable_section (decl, 1);
+ 
+       exp = build1 (ADDR_EXPR, string_type_node, decl);
+ 
+@@ -8456,6 +8456,7 @@ handle_impent (impent)
+ 	{
+ 	  sprintf (string, "%sobjc_class_name_%s",
+ 		   (flag_next_runtime ? "." : "__"), class_name);
++	  readonly_data_section ();
+ 	  assemble_global (string);
+ 	  assemble_label (string);
+ 	}
+@@ -8490,6 +8491,7 @@ handle_impent (impent)
+ 	  sprintf (string, "%sobjc_category_name_%s_%s",
+ 		   (flag_next_runtime ? "." : "__"),
+ 		   class_name, class_super_name);
++	  readonly_data_section ();
+ 	  assemble_global (string);
+ 	  assemble_label (string);
+ 	}

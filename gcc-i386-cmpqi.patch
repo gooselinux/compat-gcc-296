@@ -1,0 +1,58 @@
+2001-01-17  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/i386/i386.md (cmpqi_minus_1): Use {b} for QImode operation.
+	Use q constraints instead of r.
+
+	* gcc.c-torture/compile/20010117-1.c: New test.
+	* gcc.c-torture/compile/20010117-2.c: New test.
+
+--- gcc/config/i386/i386.md.jj	Thu Jan  4 18:08:11 2001
++++ gcc/config/i386/i386.md	Wed Jan 17 13:43:10 2001
+@@ -1139,11 +1139,11 @@
+ 
+ (define_insn "*cmpqi_minus_1"
+   [(set (reg 17)
+-	(compare (minus:QI (match_operand:QI 0 "nonimmediate_operand" "rm,r")
+-			   (match_operand:QI 1 "general_operand" "ri,mr"))
++	(compare (minus:QI (match_operand:QI 0 "nonimmediate_operand" "qm,q")
++			   (match_operand:QI 1 "general_operand" "qi,mq"))
+ 		 (const_int 0)))]
+   "ix86_match_ccmode (insn, CCGOCmode)"
+-  "cmp{w}\\t{%1, %0|%0, %1}"
++  "cmp{b}\\t{%1, %0|%0, %1}"
+   [(set_attr "type" "icmp")
+    (set_attr "mode" "QI")])
+ 
+--- gcc/testsuite/gcc.c-torture/compile/20010117-1.c.jj	Wed Jan 17 13:53:22 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010117-1.c	Wed Jan 17 13:36:53 2001
+@@ -0,0 +1,7 @@
++unsigned char u, v, w;
++
++void baz (void)
++{
++  if ((u - v - w) & 0x80)
++    v = 1;
++}
+--- gcc/testsuite/gcc.c-torture/compile/20010117-2.c.jj	Wed Jan 17 14:26:45 2001
++++ gcc/testsuite/gcc.c-torture/compile/20010117-2.c	Wed Jan 17 14:18:13 2001
+@@ -0,0 +1,20 @@
++unsigned char a, b;
++
++void baz (void)
++{
++  if (b & 0x08)
++    {
++      int g = 0;
++      int c = (b & 0x01);
++      int d = a - g - c;
++      int e = (a & 0x0f) - (g & 0x0f);
++      int f = (a & 0xf0) - (g & 0xf0);
++      int h = (a & 0x0f) - (g & 0x0f);
++
++      if ((a ^ g) & (a ^ d) & 0x80) b |= 0x40;
++      if ((d & 0xff00) == 0) b |= 0x01;
++      if (!((a - h - c) & 0xff)) b |= 0x02;
++      if ((a - g - c) & 0x80) b |= 0x80;
++      a = (e & 0x0f) | (f & 0xf0);
++    }
++}

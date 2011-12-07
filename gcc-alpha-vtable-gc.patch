@@ -1,0 +1,28 @@
+2001-08-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* config/alpha/alpha.c (flag_vtable_gc): Add a COMMON variable.
+	(override_options): Disable -fvtable-gc.
+
+--- gcc/config/alpha/alpha.c.jj	Tue Jul 24 20:40:58 2001
++++ gcc/config/alpha/alpha.c	Thu Aug  9 14:02:14 2001
+@@ -144,6 +144,8 @@ static rtx alpha_emit_xfloating_compare
+ 
+ /* Parse target option strings. */
+ 
++int flag_vtable_gc;
++
+ void
+ override_options ()
+ {
+@@ -171,7 +173,10 @@ override_options ()
+     { "21264a",	PROCESSOR_EV6, EV6_MASK|MASK_CIX },
+     { 0, 0, 0 }
+   };
+-                  
++
++  /* This does not work on Alpha */
++  flag_vtable_gc = 0;                  
++
+   alpha_tp = ALPHA_TP_PROG;
+   alpha_fprm = ALPHA_FPRM_NORM;
+   alpha_fptm = ALPHA_FPTM_N;

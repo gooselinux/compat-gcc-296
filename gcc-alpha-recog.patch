@@ -1,0 +1,46 @@
+2000-11-09  Richard Henderson  <rth@redhat.com>
+
+	* recog.c (validate_replace_rtx_1): Consider subregs when
+	replacing a register with a constant inside a sign/zero_extend.
+
+--- gcc/recog.c.jj	Tue Nov  7 00:32:18 2000
++++ gcc/recog.c	Mon Nov 13 15:08:25 2000
+@@ -479,17 +479,32 @@ validate_replace_rtx_1 (loc, from, to, o
+       /* In these cases, the operation to be performed depends on the mode
+ 	 of the operand.  If we are replacing the operand with a VOIDmode
+ 	 constant, we lose the information.  So try to simplify the operation
+-	 in that case.  If it fails, substitute in something that we know
+-	 won't be recognized.  */
++	 in that case.  */
+       if (GET_MODE (to) == VOIDmode
+ 	  && (XEXP (x, 0) == from
+ 	      || (GET_CODE (XEXP (x, 0)) == REG && GET_CODE (from) == REG
+ 		  && GET_MODE (XEXP (x, 0)) == GET_MODE (from)
+-		  && REGNO (XEXP (x, 0)) == REGNO (from))))
++		  && REGNO (XEXP (x, 0)) == REGNO (from))
++	      || (GET_CODE (XEXP (x, 0)) == SUBREG
++		  && rtx_equal_p (SUBREG_REG (XEXP (x, 0)), from))))
+ 	{
+-	  rtx new = simplify_unary_operation (code, GET_MODE (x), to,
+-					      GET_MODE (from));
+-	  if (new == 0)
++	  rtx new = NULL_RTX;
++
++	  /* If there is a subreg involved, crop to the portion of the
++	     constant that we are interested in.  */
++	  if (GET_CODE (XEXP (x, 0)) == SUBREG)
++	    to = operand_subword (to, SUBREG_BYTE (XEXP (x, 0)) / UNITS_PER_WORD,
++				  0, GET_MODE (from));
++
++	  /* If the above didn't fail, perform the extension from the
++	     mode of the operand (and not the mode of FROM).  */
++	  if (to)
++	    new = simplify_unary_operation (code, GET_MODE (x), to,
++					    GET_MODE (XEXP (x, 0)));
++
++	  /* If any of the above failed, substitute in something that
++	     we know won't be recognized.  */
++	  if (!new)
+ 	    new = gen_rtx_CLOBBER (GET_MODE (x), const0_rtx);
+ 
+ 	  validate_change (object, loc, new, 1);

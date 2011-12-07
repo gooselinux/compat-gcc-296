@@ -1,0 +1,48 @@
+2001-08-03  Jakub Jelinek  <jakub@redhat.com>
+
+	* dbxout.c (dbxout_symbol_location): Only set regno for register
+	SUBREG.
+
+	* g++.old-deja/g++.other/debug10.C: New testcase.
+
+--- gcc/dbxout.c.jj	Tue Jul 24 20:41:21 2001
++++ gcc/dbxout.c	Fri Aug  3 20:26:17 2001
+@@ -2024,8 +2024,10 @@ dbxout_symbol_location (decl, type, suff
+ 	{
+ 	  if (REGNO (value) >= FIRST_PSEUDO_REGISTER)
+ 	    return 0;
++	  regno = REGNO (alter_subreg (home));
+ 	}
+-      regno = REGNO (alter_subreg (home));
++      else
++	alter_subreg (home);
+     }
+ 
+   /* The kind-of-variable letter depends on where
+--- gcc/testsuite/g++.old-deja/g++.other/debug10.C.jj	Fri Aug  3 20:31:05 2001
++++ gcc/testsuite/g++.old-deja/g++.other/debug10.C	Fri Aug  3 20:31:12 2001
+@@ -0,0 +1,24 @@
++// Build don't link:
++// Special g++ Options: -g -O
++
++struct A
++{
++  int e();
++  A &f(double &);
++};
++
++int A::e()
++{
++  return 0;
++}
++
++A &A::f(double &a)
++{
++  union {
++    double x;
++    char y[8];
++  };
++  y[0] = e();
++  a = x;
++  return *this;
++}

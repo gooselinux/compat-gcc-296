@@ -1,0 +1,19 @@
+2001-04-28  Jakub Jelinek  <jakub@redhat.com>
+
+	* method.c (mangle_expression): Ugly workaround for old ABI
+	mangling problems.
+
+--- gcc/cp/method.c.jj	Thu Jan 11 00:06:28 2001
++++ gcc/cp/method.c	Sat Apr 28 22:28:18 2001
+@@ -560,6 +560,11 @@ mangle_expression (value)
+ 		     
+ 	       template <class T> void f(A<sizeof(T)>);  */
+ 	    build_mangled_name_for_type (operand);
++	  else if (TREE_TYPE (operand) == 0
++		   && TREE_CODE (operand) == NEGATE_EXPR)
++	    build_overload_value (TREE_TYPE (TREE_OPERAND (operand, 0)),
++				  operand,
++				  mf_maybe_uninstantiated);
+ 	  else
+ 	    build_overload_value (TREE_TYPE (operand),
+ 				  operand,

@@ -1,0 +1,34 @@
+2001-12-09  Jakub Jelinek  <jakub@redhat.com>
+
+	* combine.c (nonzero_bits): If using reg_nonzero_bits,
+	we don't know anything about bits outside of X mode.
+	(num_sign_bit_copies): Likewise.
+
+--- gcc/combine.c.jj	Mon Nov 12 10:33:42 2001
++++ gcc/combine.c	Sun Dec  9 23:58:12 2001
+@@ -7965,7 +7965,14 @@ nonzero_bits (x, mode)
+ 	  return nonzero_bits (tem, mode);
+ 	}
+       else if (nonzero_sign_valid && reg_nonzero_bits[REGNO (x)])
+-	return reg_nonzero_bits[REGNO (x)] & nonzero;
++	{
++	  unsigned HOST_WIDE_INT mask = reg_nonzero_bits[REGNO (x)];
++
++	  if (GET_MODE_BITSIZE (GET_MODE (x)) < mode_width)
++	    /* We don't know anything about the upper bits.  */
++	    mask |= GET_MODE_MASK (mode) ^ GET_MODE_MASK (GET_MODE (x));
++	  return nonzero & mask;
++	}
+       else
+ 	return nonzero;
+ 
+@@ -8360,7 +8367,8 @@ num_sign_bit_copies (x, mode)
+       if (tem != 0)
+ 	return num_sign_bit_copies (tem, mode);
+ 
+-      if (nonzero_sign_valid && reg_sign_bit_copies[REGNO (x)] != 0)
++      if (nonzero_sign_valid && reg_sign_bit_copies[REGNO (x)] != 0
++	  && GET_MODE_BITSIZE (GET_MODE (x)) == bitwidth)
+ 	return reg_sign_bit_copies[REGNO (x)];
+       break;
+ 
